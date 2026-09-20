@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+
+    <!--
+        PaperEyes keeps its saved-paper library and project membership data
+        locally. Do not copy private application state into legacy Auto Backup.
+
+        android:allowBackup="false" is also set in AndroidManifest.xml. These
+        exclusions make the intended policy explicit for Android 11 and lower.
+    -->
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+
+</full-backup-content>

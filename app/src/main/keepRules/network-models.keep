@@ -1,0 +1,30 @@
+# PaperEyes JSON response models are deserialized by Gson through reflection.
+#
+# Gson 2.11+ and Retrofit 2.9+ already provide their own general R8 rules,
+# but many PaperEyes DTO properties intentionally use their Kotlin property
+# names rather than @SerializedName. Keep only these small response models so
+# release obfuscation cannot silently rename JSON fields.
+
+-keep class com.example.papereyes.data.remote.CrossrefResponse { *; }
+-keep class com.example.papereyes.data.remote.CrossrefSingleResponse { *; }
+-keep class com.example.papereyes.data.remote.CrossrefMessage { *; }
+-keep class com.example.papereyes.data.remote.CrossrefItem { *; }
+-keep class com.example.papereyes.data.remote.CrossrefAuthor { *; }
+-keep class com.example.papereyes.data.remote.CrossrefDate { *; }
+
+-keep class com.example.papereyes.data.remote.InspireSearchResponse { *; }
+-keep class com.example.papereyes.data.remote.InspireHits { *; }
+-keep class com.example.papereyes.data.remote.InspireHit { *; }
+-keep class com.example.papereyes.data.remote.InspireLinks { *; }
+-keep class com.example.papereyes.data.remote.InspireMetadata { *; }
+-keep class com.example.papereyes.data.remote.InspireTitle { *; }
+-keep class com.example.papereyes.data.remote.InspireAuthor { *; }
+-keep class com.example.papereyes.data.remote.InspirePublicationInfo { *; }
+-keep class com.example.papereyes.data.remote.InspireDoi { *; }
+-keep class com.example.papereyes.data.remote.InspireArxivEprint { *; }
+
+-keep class com.example.papereyes.data.remote.SemanticScholarPaper { *; }
+-keep class com.example.papereyes.data.remote.SemanticScholarAuthor { *; }
+-keep class com.example.papereyes.data.remote.SemanticScholarExternalIds { *; }
+-keep class com.example.papereyes.data.remote.SemanticScholarMatchResponse { *; }
+-keep class com.example.papereyes.data.remote.SemanticScholarPaperMatch { *; }
