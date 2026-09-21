@@ -51,6 +51,8 @@ Launcher assets use the user-selected papers-on-wood artwork, with density-speci
 
 Both Import and Live Scan produce `DocumentEvidence` through `TextRecognizerService` and `TextCandidateExtractor`.
 
+Before starting Import or Live Scan, PaperEyes asks whether the image is a journal paper, references, or a conference slide. Journal-paper mode uses only document identity evidence and ignores incidental citations. References and conference-slide modes require detected citation evidence, use that evidence to decide whether a fallback capture is needed, and never resolve a slide heading or surrounding paper as the requested work.
+
 `DocumentLayoutAnalyzer` separates DOI, arXiv ID, journal citation, title, and interior-text fingerprint evidence. It deliberately:
 
 - stops normal document-identity extraction at a References/Bibliography heading;
@@ -140,6 +142,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: replaced the default launcher artwork with the user-selected paper-stack image and added legacy, adaptive, round, and monochrome launcher variants.
 - 2026-09-21: launcher resource verification passed: `assembleDebug` and `lintDebug` succeeded; lint reports 0 errors and 23 warnings.
 - 2026-09-21 device feedback: the initial adaptive launcher artwork appeared oversized. The stack was reframed with additional wood margin, while legacy density icons use a calibrated center crop so their apparent size remains consistent with the adaptive icon.
+- 2026-09-21: added an explicit scan-subject chooser before both Import and Live Scan. Journal-paper, reference-list, and conference-slide choices now constrain which OCR evidence can trigger scholarly lookup; three focused policy regressions and the full JVM suite pass.
+- 2026-09-21 crash investigation: Android's crash buffer and `ApplicationExitInfo` contained no PaperEyes crash or ANR, only explicit force-stops. A clean launch and Live Scan session remained alive on the connected A069P; the crash report still needs a reproduction or PaperEyes stack trace before a root-cause fix can be made safely.
+- 2026-09-21: final scan-subject verification passed: 128 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed successfully.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
