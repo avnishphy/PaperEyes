@@ -9,6 +9,7 @@ import android.util.Size
 import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.widget.Toast
 import androidx.compose.runtime.withFrameNanos
 import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.telemetry.ScanStage
@@ -48,6 +49,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.model.Paper
+import com.example.papereyes.data.local.LibraryRepository
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
@@ -56,6 +58,7 @@ import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
+import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -400,6 +403,8 @@ private fun analyzeForTextPresence(
 
 @Composable
 fun LiveScanScreen(
+    libraryRepository: LibraryRepository,
+    detailOpen: Boolean = false,
     onBack: () -> Unit,
     onPaperClick: (Paper) -> Unit
 ) {
@@ -421,7 +426,7 @@ fun LiveScanScreen(
      * NAVIGATION
      * ================================================================
      */
-    BackHandler {
+    BackHandler(enabled = !detailOpen) {
 
         onBack()
     }
@@ -508,6 +513,10 @@ fun LiveScanScreen(
 
     var referenceProgress by remember {
         mutableStateOf<ReferenceBatchProgress?>(null)
+    }
+
+    var savePromptPapers by remember {
+        mutableStateOf<List<Paper>>(emptyList())
     }
 
     var zoomRatio by remember { mutableFloatStateOf(1f) }
@@ -626,6 +635,7 @@ fun LiveScanScreen(
             }
             referenceOutcomes = outcomes
             papers = outcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+            if (papers.size > 1) savePromptPapers = papers
             scanningLocked = true
             val failures = outcomes.count { it.status != ReferenceResolutionStatus.IDENTIFIED }
             statusMessage = when {
@@ -1366,6 +1376,10 @@ fun LiveScanScreen(
                     null
 
 
+                savePromptPapers =
+                    emptyList()
+
+
                 statusMessage =
                     "Point PaperEyes toward the paper title"
             }
@@ -1390,6 +1404,35 @@ fun LiveScanScreen(
             onSearch = { selected ->
                 pendingReferences = emptyList()
                 coroutineScope.launch { resolveReferences(selected) }
+            }
+        )
+    }
+
+    if (savePromptPapers.isNotEmpty()) {
+        val papersToSave = savePromptPapers
+        SaveIdentifiedPapersDialog(
+            papers = papersToSave,
+            onDismiss = { savePromptPapers = emptyList() },
+            onSaveAll = {
+                savePromptPapers = emptyList()
+                coroutineScope.launch {
+                    var saved = 0
+                    papersToSave.forEach { paper ->
+                        try {
+                            if (libraryRepository.savePaper(paper)) saved += 1
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            // Keep saving the remaining identified papers.
+                        }
+                    }
+                    Toast.makeText(
+                        context,
+                        if (saved > 0) "Saved $saved of ${papersToSave.size} papers"
+                        else "Papers were already saved or could not be saved",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         )
     }

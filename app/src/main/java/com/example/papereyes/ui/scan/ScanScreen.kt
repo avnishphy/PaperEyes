@@ -42,6 +42,7 @@ import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.ReferenceBatchSummary
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
+import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -106,6 +107,10 @@ fun ScanScreen(
 
     var referenceProgress by remember {
         mutableStateOf<ReferenceBatchProgress?>(null)
+    }
+
+    var savePromptPapers by remember {
+        mutableStateOf<List<Paper>>(emptyList())
     }
 
 
@@ -188,6 +193,7 @@ fun ScanScreen(
         referenceOutcomes = emptyList()
         referenceProgress = null
         pendingReferences = emptyList()
+        savePromptPapers = emptyList()
 
 
         detectedType =
@@ -258,6 +264,7 @@ fun ScanScreen(
             }
             referenceOutcomes = outcomes
             results = outcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+            if (results.size > 1) savePromptPapers = results
         } catch (exception: CancellationException) {
             throw exception
         } finally {
@@ -308,6 +315,7 @@ fun ScanScreen(
                 pendingReferences = emptyList()
                 referenceOutcomes = emptyList()
                 referenceProgress = null
+                savePromptPapers = emptyList()
 
 
                 try {
@@ -573,7 +581,8 @@ fun ScanScreen(
                 ReferenceBatchSummary(
                     outcomes = referenceOutcomes,
                     completed = progress.completed,
-                    total = progress.total
+                    total = progress.total,
+                    onPaperClick = onPaperClick
                 )
             }
         }
@@ -812,6 +821,35 @@ fun ScanScreen(
             onSearch = { selected ->
                 pendingReferences = emptyList()
                 coroutineScope.launch { resolveReferences(selected) }
+            }
+        )
+    }
+
+    if (savePromptPapers.isNotEmpty()) {
+        val papersToSave = savePromptPapers
+        SaveIdentifiedPapersDialog(
+            papers = papersToSave,
+            onDismiss = { savePromptPapers = emptyList() },
+            onSaveAll = {
+                savePromptPapers = emptyList()
+                coroutineScope.launch {
+                    var saved = 0
+                    papersToSave.forEach { paper ->
+                        try {
+                            if (libraryRepository.savePaper(paper)) saved += 1
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            // Continue so one database failure does not hide the rest.
+                        }
+                    }
+                    Toast.makeText(
+                        context,
+                        if (saved > 0) "Saved $saved of ${papersToSave.size} papers"
+                        else "Papers were already saved or could not be saved",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         )
     }

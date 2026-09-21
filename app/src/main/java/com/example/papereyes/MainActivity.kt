@@ -229,37 +229,9 @@ class MainActivity : ComponentActivity() {
                             Modifier.fillMaxSize()
                     ) {
 
-                        /*
-                         * Rendering priority matters.
-                         *
-                         * The most specific / modal screens are checked
-                         * first.
-                         */
+                        /* Keep the underlying screen composed while paper
+                         * detail is open so scan/reference results survive Back. */
                         when {
-
-                            /*
-                             * ========================================
-                             * PAPER DETAIL
-                             * ========================================
-                             *
-                             * Highest priority because it can be opened
-                             * from several different underlying screens.
-                             */
-                            selectedPaper != null -> {
-
-                                PaperDetailScreen(
-                                    paper =
-                                        selectedPaper!!,
-
-                                    libraryRepository =
-                                        libraryRepository,
-
-                                    onBack =
-                                        closePaperDetail
-                                )
-                            }
-
-
                             /*
                              * ========================================
                              * LIVE SCAN
@@ -268,6 +240,10 @@ class MainActivity : ComponentActivity() {
                             liveScanOpen -> {
 
                                 LiveScanScreen(
+                                    libraryRepository = libraryRepository,
+
+                                    detailOpen = selectedPaper != null,
+
                                     onBack = {
 
                                         liveScanOpen =
@@ -422,6 +398,19 @@ class MainActivity : ComponentActivity() {
                                         selectedProject =
                                             project
                                     }
+                                )
+                            }
+                        }
+
+                        selectedPaper?.let { paper ->
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = MaterialTheme.colorScheme.background
+                            ) {
+                                PaperDetailScreen(
+                                    paper = paper,
+                                    libraryRepository = libraryRepository,
+                                    onBack = closePaperDetail
                                 )
                             }
                         }

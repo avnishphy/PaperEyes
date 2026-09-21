@@ -133,8 +133,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21 device feedback: Import of “Shedding light on shadow generalized parton distributions” selected a bleed-through/noisy Physical Review header instead of the clean title/DOI. The OCR evidence rule now rejects noisy journal headers as titles and accepts a unique standalone DOI from anywhere before a references section. Focused regressions pass.
 - 2026-09-21: title/OCR resolution now consults bounded OpenAlex metadata when Crossref has no exact title. This specifically covers conference papers such as “Regularization of Neural Networks using DropConnect,” whose authoritative PMLR record may not resolve cleanly through Crossref. Focused provider/resolver/batch tests pass.
 - 2026-09-21: Live Scan now removes the explicit zoom panel and frame corners. When scan/reference results lock the session, analysis is cleared, CameraX is unbound, and the preview is replaced by a black result background until Scan again (or selection cancellation) recreates the camera session.
+- 2026-09-21: ambiguous reference rows now open their bounded candidate list; choosing a candidate opens normal paper detail. MainActivity keeps the underlying Import/Live/Library/Project screen composed beneath paper detail, so Back returns to the same remaining results. When a batch identifies more than one paper, Import and Live Scan ask whether to save all; saving continues across per-paper database failures and reports the saved count.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Expose ambiguous candidates and improve title-provider fallback, then simplify/stop the live camera UI, add Save all, and preserve batch state through paper detail.
+Run final Gradle verification, then repeat the supplied bibliography, DropConnect slide, and “Shedding light…” device cases in Android Studio.

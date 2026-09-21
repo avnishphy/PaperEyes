@@ -121,6 +121,29 @@ fun ReferenceSelectionDialog(
 }
 
 @Composable
+fun SaveIdentifiedPapersDialog(
+    papers: List<Paper>,
+    onSaveAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save identified papers?") },
+        text = {
+            Text(
+                "${papers.size} papers were identified. Save all of them to your library?"
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onSaveAll) { Text("Save all") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Not now") }
+        }
+    )
+}
+
+@Composable
 fun ReferenceBatchSummary(
     outcomes: List<ReferenceResolution>,
     completed: Int,
@@ -131,6 +154,7 @@ fun ReferenceBatchSummary(
 ) {
     if (total == 0) return
 
+    var candidateOutcome by remember { mutableStateOf<ReferenceResolution?>(null) }
     val failures = outcomes.filter { it.status != ReferenceResolutionStatus.IDENTIFIED }
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
@@ -176,10 +200,12 @@ fun ReferenceBatchSummary(
                 }
                 Column(
                     modifier = Modifier.then(
-                        if (outcome.paper != null && onPaperClick != null) {
-                            Modifier.clickable { onPaperClick(outcome.paper) }
-                        } else {
-                            Modifier
+                        when {
+                            outcome.paper != null && onPaperClick != null ->
+                                Modifier.clickable { onPaperClick(outcome.paper) }
+                            outcome.candidates.isNotEmpty() ->
+                                Modifier.clickable { candidateOutcome = outcome }
+                            else -> Modifier
                         }
                     )
                 ) {
@@ -200,9 +226,68 @@ fun ReferenceBatchSummary(
                     )
                     if (outcome.paper != null && onPaperClick != null) {
                         Text("Tap to open", style = MaterialTheme.typography.labelSmall)
+                    } else if (outcome.candidates.isNotEmpty()) {
+                        Text(
+                            "Tap to view ${outcome.candidates.size} ${if (outcome.candidates.size == 1) "candidate" else "candidates"}",
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
             }
         }
+    }
+
+    candidateOutcome?.let { outcome ->
+        AlertDialog(
+            onDismissRequest = { candidateOutcome = null },
+            title = { Text("Possible papers") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        outcome.reference.label?.let { "Reference [$it]" } ?: "Selected reference",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Text(
+                        outcome.reference.text,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(outcome.candidates) { _, paper ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = onPaperClick != null) {
+                                        candidateOutcome = null
+                                        onPaperClick?.invoke(paper)
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(paper.title, style = MaterialTheme.typography.titleSmall)
+                                    if (paper.authors.isNotBlank()) {
+                                        Text(
+                                            paper.authors,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    paper.year?.let {
+                                        Text(it.toString(), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { candidateOutcome = null }) { Text("Close") }
+            }
+        )
     }
 }
