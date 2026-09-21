@@ -52,6 +52,9 @@ import com.example.papereyes.data.model.Paper
 import com.example.papereyes.data.local.LibraryRepository
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.domain.evidence.ReferenceEvidence
+import com.example.papereyes.domain.evidence.ScanSubject
+import com.example.papereyes.domain.evidence.hasRequestedEvidence
+import com.example.papereyes.domain.evidence.referencesFor
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
 import com.example.papereyes.domain.reference.ReferenceBatchResolver
 import com.example.papereyes.domain.reference.ReferenceResolution
@@ -98,6 +101,24 @@ private const val SHARPNESS_MAX_DIMENSION =
 
 private const val PAPER_MATCH_THRESHOLD =
     0.65
+
+private fun ScanSubject.scanGuidance(): String = when (this) {
+    ScanSubject.JOURNAL_PAPER -> "Point PaperEyes toward the paper title"
+    ScanSubject.REFERENCES -> "Point PaperEyes toward the reference list"
+    ScanSubject.CONFERENCE_SLIDE -> "Point PaperEyes toward the slide citation"
+}
+
+private fun ScanSubject.noEvidenceMessage(): String = when (this) {
+    ScanSubject.JOURNAL_PAPER -> "Couldn't read enough of the paper title"
+    ScanSubject.REFERENCES -> "No references found — try a tighter frame"
+    ScanSubject.CONFERENCE_SLIDE -> "No slide citation found — try the citation footer"
+}
+
+private fun ScanSubject.readingMessage(): String = when (this) {
+    ScanSubject.JOURNAL_PAPER -> "Reading paper…"
+    ScanSubject.REFERENCES -> "Reading references…"
+    ScanSubject.CONFERENCE_SLIDE -> "Reading slide citations…"
+}
 
 
 /*
@@ -404,6 +425,7 @@ private fun analyzeForTextPresence(
 @Composable
 fun LiveScanScreen(
     libraryRepository: LibraryRepository,
+    scanSubject: ScanSubject,
     detailOpen: Boolean = false,
     onBack: () -> Unit,
     onPaperClick: (Paper) -> Unit
@@ -453,7 +475,7 @@ fun LiveScanScreen(
     var statusMessage by remember {
 
         mutableStateOf(
-            "Point PaperEyes toward the paper title"
+            scanSubject.scanGuidance()
         )
     }
 
@@ -944,7 +966,7 @@ fun LiveScanScreen(
                                             // burst is worth taking.
                                             if (letterCount < 20 && !looksLikeIdentifier(text)) {
                                                 statusMessage =
-                                                    "Point PaperEyes toward the paper title"
+                                                    scanSubject.scanGuidance()
                                                 return@launch
                                             }
 
@@ -1017,7 +1039,7 @@ fun LiveScanScreen(
                                                             frameCount = 1,
                                                             onProgress = { _, _ ->
                                                                 statusMessage =
-                                                                    "Captured — reading title…"
+                                                                    "Captured — ${scanSubject.readingMessage().lowercase()}"
                                                             }
                                                         ).single()
 
@@ -1025,7 +1047,7 @@ fun LiveScanScreen(
                                                     capturedFiles += firstFrame
 
                                                     statusMessage =
-                                                        "Reading title…"
+                                                        scanSubject.readingMessage()
 
                                                     var ocrResult = highResRecognizer.recognizeCameraCapture(
                                                         context, Uri.fromFile(firstFrame), trace)
@@ -1039,7 +1061,7 @@ fun LiveScanScreen(
                                                      * scans still get the historical three-frame
                                                      * behavior, while normal scans finish much faster.
                                                      */
-                                                    if (!isGoodCandidate(candidate) && ocrResult.evidence.fingerprints.isEmpty()) {
+                                                    if (!ocrResult.evidence.hasRequestedEvidence(scanSubject)) {
                                                         statusMessage =
                                                             "First frame unclear — capturing 2 more…"
 
@@ -1076,7 +1098,7 @@ fun LiveScanScreen(
                                                         }
 
                                                         statusMessage =
-                                                            "Reading title…"
+                                                            scanSubject.readingMessage()
 
                                                         ocrResult = highResRecognizer.recognizeCameraCapture(
                                                             context, Uri.fromFile(sharpestFallback.file), trace)
@@ -1086,7 +1108,8 @@ fun LiveScanScreen(
                                                     highResCandidate =
                                                         candidate
 
-                                                    val references = ocrResult.evidence.references
+                                                    val references =
+                                                        ocrResult.evidence.referencesFor(scanSubject)
                                                     if (references.size > 1) {
                                                         pendingReferences = references
                                                         scanningLocked = true
@@ -1099,9 +1122,9 @@ fun LiveScanScreen(
                                                         return@launch
                                                     }
 
-                                                    if (!isGoodCandidate(candidate) && ocrResult.evidence.fingerprints.isEmpty()) {
+                                                    if (!ocrResult.evidence.hasRequestedEvidence(scanSubject)) {
                                                         statusMessage =
-                                                            "Couldn't read enough of the title"
+                                                            scanSubject.noEvidenceMessage()
                                                         return@launch
                                                     }
 
@@ -1381,7 +1404,7 @@ fun LiveScanScreen(
 
 
                 statusMessage =
-                    "Point PaperEyes toward the paper title"
+                    scanSubject.scanGuidance()
             }
         )
         } else {
@@ -1399,7 +1422,7 @@ fun LiveScanScreen(
             onDismiss = {
                 pendingReferences = emptyList()
                 scanningLocked = false
-                statusMessage = "Point PaperEyes toward the paper title"
+                statusMessage = scanSubject.scanGuidance()
             },
             onSearch = { selected ->
                 pendingReferences = emptyList()

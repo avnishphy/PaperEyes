@@ -247,6 +247,10 @@ class MainActivity : ComponentActivity() {
                                 LiveScanScreen(
                                     libraryRepository = libraryRepository,
 
+                                    scanSubject = ScanSubject.entries.firstOrNull {
+                                        it.name == liveScanSubjectName
+                                    } ?: ScanSubject.JOURNAL_PAPER,
+
                                     detailOpen = selectedPaper != null,
 
                                     onBack = {
