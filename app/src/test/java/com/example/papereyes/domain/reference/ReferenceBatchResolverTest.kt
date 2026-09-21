@@ -7,6 +7,7 @@ import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.runBlocking
+import java.net.UnknownHostException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -101,6 +102,37 @@ class ReferenceBatchResolverTest {
             cancelled = true
         }
         assertEquals(true, cancelled)
+    }
+
+    @Test
+    fun interruptedConnectionStopsFurtherProviderRequests() = runBlocking {
+        var providerCalls = 0
+        val progress = mutableListOf<ReferenceBatchProgress>()
+        val resolver = ReferenceBatchResolver {
+            providerCalls += 1
+            throw UnknownHostException("offline")
+        }
+
+        val outcomes = resolver.resolveAll(
+            listOf(
+                reference("1", "first"),
+                reference("2", "second"),
+                reference("3", "third")
+            ),
+            progress::add
+        )
+
+        assertEquals(1, providerCalls)
+        assertEquals(3, outcomes.size)
+        assertEquals(
+            listOf(
+                ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE,
+                ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE,
+                ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE
+            ),
+            outcomes.map { it.status }
+        )
+        assertEquals(listOf(1, 2, 3), progress.map { it.completed })
     }
 
     @Test

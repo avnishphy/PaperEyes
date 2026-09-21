@@ -4,6 +4,7 @@ import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.PaperResolveResult
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.domain.ResolutionStatus
+import com.example.papereyes.domain.isConnectivityFailure
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -45,18 +46,36 @@ class ReferenceBatchResolver(
     ): List<ReferenceResolution> {
         val selected = references.take(MAX_BATCH_SIZE)
         val outcomes = ArrayList<ReferenceResolution>(selected.size)
+        var connectionInterrupted = false
 
         selected.forEach { reference ->
-            val outcome = try {
-                classify(reference, resolveQuery(reference.query))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
+            val outcome = if (connectionInterrupted) {
                 ReferenceResolution(
                     reference = reference,
-                    status = ReferenceResolutionStatus.ERROR,
-                    message = error.message?.take(MAX_ERROR_CHARS)
+                    status = ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE,
+                    message = CONNECTION_INTERRUPTED_MESSAGE
                 )
+            } else {
+                try {
+                    classify(reference, resolveQuery(reference.query))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (error.isConnectivityFailure()) {
+                        connectionInterrupted = true
+                        ReferenceResolution(
+                            reference = reference,
+                            status = ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE,
+                            message = CONNECTION_INTERRUPTED_MESSAGE
+                        )
+                    } else {
+                        ReferenceResolution(
+                            reference = reference,
+                            status = ReferenceResolutionStatus.ERROR,
+                            message = error.message?.take(MAX_ERROR_CHARS)
+                        )
+                    }
+                }
             }
 
             outcomes += outcome
@@ -143,6 +162,8 @@ class ReferenceBatchResolver(
         const val MAX_BATCH_SIZE = 50
         private const val MAX_CANDIDATES_PER_REFERENCE = 10
         private const val MAX_ERROR_CHARS = 240
+        private const val CONNECTION_INTERRUPTED_MESSAGE =
+            "Internet connection was interrupted. Try again when connected."
         private val whitespace = Regex("\\s+")
         private val nonAlphaNumeric = Regex("[^\\p{L}\\p{N}]+")
     }
