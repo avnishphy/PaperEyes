@@ -27,16 +27,35 @@ class OpenAlexProvider(
         if (query.isBlank()) return emptyList()
         val response = requestPolicy.request(ScholarlyProvider.OPENALEX) { api.searchWorks(query) }
         return response.results.orEmpty().take(5).mapNotNull { work ->
-            val title = work.title?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            val doi = normalizePaperDoi(work.doi)
-            val openAlexUrl = work.id?.takeIf { Regex("https://openalex\\.org/W[0-9]+").matches(it) }
-            if (doi == null && openAlexUrl == null) return@mapNotNull null
-            val paper = Paper(title=title, authors=work.authorships.orEmpty().take(100).mapNotNull {
-                it.author?.displayName?.trim()?.takeIf(String::isNotEmpty)
-            }.joinToString(", "), year=work.publicationYear, doi=doi,
-                url=doi?.let { "https://doi.org/$it" } ?: openAlexUrl)
+            val paper = work.toPaper() ?: return@mapNotNull null
             PaperCandidate(paper, id, AbstractReconstruction.segments(work.abstractInvertedIndex))
         }
+    }
+
+    /** Bounded metadata fallback for exact title/OCR queries missing from Crossref. */
+    suspend fun searchTitle(query: String): List<Paper> {
+        val cleaned = query.trim().take(500)
+        if (cleaned.isBlank()) return emptyList()
+        val response = requestPolicy.request(ScholarlyProvider.OPENALEX) {
+            api.searchWorks(cleaned, perPage = 5)
+        }
+        return response.results.orEmpty().take(5).mapNotNull { it.toPaper() }
+    }
+
+    private fun OpenAlexWork.toPaper(): Paper? {
+        val cleanTitle = title?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val normalizedDoi = normalizePaperDoi(doi)
+        val openAlexUrl = id?.takeIf { Regex("https://openalex\\.org/W[0-9]+").matches(it) }
+        if (normalizedDoi == null && openAlexUrl == null) return null
+        return Paper(
+            title = cleanTitle,
+            authors = authorships.orEmpty().take(100).mapNotNull {
+                it.author?.displayName?.trim()?.takeIf(String::isNotEmpty)
+            }.joinToString(", "),
+            year = publicationYear,
+            doi = normalizedDoi,
+            url = normalizedDoi?.let { "https://doi.org/$it" } ?: openAlexUrl
+        )
     }
 }
 

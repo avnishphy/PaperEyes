@@ -43,7 +43,8 @@ class PaperResolver(
     private val semanticScholarApi: SemanticScholarApi = SemanticScholarClient.api,
     private val arxivApi: ArxivApi = ArxivClient.api,
     private val interiorDiscovery: InteriorPageDiscovery = InteriorPageDiscovery(listOf(OpenAlexProvider())),
-    private val requestPolicy: ScholarlyRequestPolicy = ScholarlyRequestPolicy.shared
+    private val requestPolicy: ScholarlyRequestPolicy = ScholarlyRequestPolicy.shared,
+    private val openAlexTitleSearch: suspend (String) -> List<Paper> = OpenAlexProvider()::searchTitle
 ) {
     private val cache = SuspendQueryCache<String, PaperResolveResult>(ttlMillis = {
         when {
@@ -112,9 +113,29 @@ class PaperResolver(
             }
             return PaperResolveResult(PaperInputType.JOURNAL_CITATION, emptyList())
         }
-        return try { PaperResolveResult(PaperInputType.TITLE_OR_OCR, crossrefRepository.searchPaper(input)) }
+        var crossrefFailure: Exception? = null
+        val crossref = try { crossrefRepository.searchPaper(input) }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { throw lookupFailure("Crossref", error) }
+        catch (error: Exception) { crossrefFailure = error; emptyList() }
+
+        // Avoid a second provider call when Crossref already has the exact title.
+        if (crossref.any { normalizedTitle(it.title) == normalizedTitle(input) }) {
+            return PaperResolveResult(PaperInputType.TITLE_OR_OCR, crossref)
+        }
+
+        var openAlexFailure: Exception? = null
+        val openAlex = try { openAlexTitleSearch(input) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { openAlexFailure = error; emptyList() }
+
+        val merged = (crossref + openAlex).distinctBy {
+            normalizePaperDoi(it.doi) ?: "${normalizedTitle(it.title)}:${it.year}"
+        }
+        if (merged.isNotEmpty()) return PaperResolveResult(PaperInputType.TITLE_OR_OCR, merged)
+        if (crossrefFailure != null || openAlexFailure != null) {
+            throw lookupFailure("Scholarly lookup services", crossrefFailure ?: openAlexFailure!!)
+        }
+        return PaperResolveResult(PaperInputType.TITLE_OR_OCR, emptyList())
     }
 
     private fun citationResult(papers: List<Paper>) = PaperResolveResult(
@@ -171,4 +192,9 @@ class PaperResolver(
         ScholarlyIdentifiers.extractArxivId(input)?.let { return "arxiv:$it" }
         return "query:" + input.lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
     }
+
+    private fun normalizedTitle(value: String): String = value
+        .lowercase(Locale.ROOT)
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .trim()
 }

@@ -31,4 +31,20 @@ class OpenAlexProviderTest {
   assertTrue(OpenAlexProvider(api,ScholarlyRequestPolicy{RequestGate(0)}).searchEvidence(RetrievalEvidence(
    listOf(TextFingerprint("Distinctive nonperturbative distributions constrain universal transverse coefficients",1,9.0)))).isEmpty())
  }
+
+ @Test fun titleSearchMapsConferencePaperWithoutDoi()=runBlocking {
+  val api=object:OpenAlexApi {
+   override suspend fun searchWorks(search:String,perPage:Int,select:String):OpenAlexResponse {
+    assertEquals("Regularization of Neural Networks using DropConnect",search)
+    return OpenAlexResponse(listOf(OpenAlexWork(
+     "https://openalex.org/W123",null,"Regularization of Neural Networks using DropConnect",2013,
+     listOf(OpenAlexAuthorship(OpenAlexAuthor("Li Wan"))),null)))
+   }
+  }
+  val papers=OpenAlexProvider(api,ScholarlyRequestPolicy { RequestGate(0) }).searchTitle(
+   "Regularization of Neural Networks using DropConnect")
+  assertEquals(1,papers.size)
+  assertEquals("https://openalex.org/W123",papers.single().url)
+  assertEquals("Li Wan",papers.single().authors)
+ }
 }

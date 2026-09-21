@@ -131,6 +131,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: final Gradle verification passed: 122 JVM tests, 0 failures/errors/skips; `assembleDebug` produced `app-debug.apk`; `lintDebug` completed with dependency/update warnings and the pre-existing `UseKtx` warning, but no lint errors.
 - 2026-09-21 device feedback: reference parsing is fast and accurate, but many lookups remain ambiguous; ambiguous candidates were not exposed; the explicit zoom panel and scan corners should be removed; the camera continued behind results; batch results need Save all and state preservation through paper detail; the DropConnect slide citation remained ambiguous.
 - 2026-09-21 device feedback: Import of “Shedding light on shadow generalized parton distributions” selected a bleed-through/noisy Physical Review header instead of the clean title/DOI. The OCR evidence rule now rejects noisy journal headers as titles and accepts a unique standalone DOI from anywhere before a references section. Focused regressions pass.
+- 2026-09-21: title/OCR resolution now consults bounded OpenAlex metadata when Crossref has no exact title. This specifically covers conference papers such as “Regularization of Neural Networks using DropConnect,” whose authoritative PMLR record may not resolve cleanly through Crossref. Focused provider/resolver/batch tests pass.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
