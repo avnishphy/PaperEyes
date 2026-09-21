@@ -19,10 +19,10 @@ This is the single living context file for day-to-day PaperEyes development. Upd
 - App module: `C:\Users\as8oc\AndroidStudioProjects\PaperEyes\app`
 - Active branch at this update: `feat/reference-detection`
 - `HEAD`: `1d61997` (`feat: harden PaperEyes paper identification and verification pipeline`), also `main` and `origin/main` at audit time.
-- Existing user work found untracked and intentionally preserved:
+- Existing user work found untracked at the initial audit and intentionally preserved before being completed in the first feature slice:
   - `src/main/java/com/example/papereyes/domain/evidence/ReferenceEvidence.kt`
   - `src/main/java/com/example/papereyes/ocr/ReferenceDetector.kt`
-- The untracked `ReferenceDetector.kt` is an incomplete skeleton. On 2026-09-21, `testDebugUnitTest` reached Kotlin compilation and failed only on its two bodyless methods plus public/internal visibility mismatch. Do not mistake this dirty-tree failure for the committed baseline.
+- The initial `ReferenceDetector.kt` skeleton had two bodyless methods and a public/internal visibility mismatch. Slice 1 completes it and tests it; the note is retained so the original dirty-tree baseline is not confused with commit `1d61997`.
 - This VS Code shell does not set `JAVA_HOME`. The installed Android Studio runtime is `C:\Program Files\Android\Android Studio\jbr` (OpenJDK 25.0.3). A one-command PowerShell setup is:
 
   ```powershell
@@ -99,7 +99,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 
 ## Planned small implementation slices
 
-1. **Reference extraction core:** finish the reference model/detector with pure JVM fixtures for numbered, wrapped, DOI/arXiv, slide-footer, false-positive, and bounds cases. Keep it separate from document identity.
+1. **Reference extraction core (complete):** finished the reference model/detector with pure JVM fixtures for numbered, wrapped, DOI/arXiv, slide-footer, false-positive, layout-index, de-duplication, and bounds cases. It remains separate from document identity.
 2. **Evidence integration:** attach detected references to OCR evidence without changing `bestQuery`; test that single-paper scans retain current behavior.
 3. **Batch domain model:** resolve selected references independently with bounded progress and explicit per-reference success/failure/ambiguity.
 4. **Selection/results UI:** reusable Compose selection dialog, Import integration, then Live Scan integration. Partial failures remain visible beside successes.
@@ -122,8 +122,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: full app-module file inventory and current Git state inspected.
 - 2026-09-21: existing repository `HANDOFF.md`, architecture/audit docs, build configuration, manifest, schemas, production package layout, and test inventory reviewed.
 - 2026-09-21: real Gradle `testDebugUnitTest` attempted with Android Studio JBR; compilation failed at the pre-existing incomplete untracked `ReferenceDetector.kt` skeleton (four compiler diagnostics). No tests executed.
+- 2026-09-21: reference extraction slice completed. Six focused detector tests pass, followed by the full `testDebugUnitTest` suite.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Complete slice 1 with tests, without yet modifying Import or Live Scan UI.
+Complete slice 2: add detected references to `DocumentEvidence` while preserving all single-paper `bestQuery` and safety behavior.
