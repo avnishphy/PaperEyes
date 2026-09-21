@@ -35,7 +35,13 @@ import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.PaperInputType
 import com.example.papereyes.domain.PaperResolver
+import com.example.papereyes.domain.evidence.ReferenceEvidence
+import com.example.papereyes.domain.reference.ReferenceBatchProgress
+import com.example.papereyes.domain.reference.ReferenceBatchResolver
+import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.ocr.TextRecognizerService
+import com.example.papereyes.ui.common.ReferenceBatchSummary
+import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +96,18 @@ fun ScanScreen(
         mutableStateOf<PaperInputType?>(null)
     }
 
+    var pendingReferences by remember {
+        mutableStateOf<List<ReferenceEvidence>>(emptyList())
+    }
+
+    var referenceOutcomes by remember {
+        mutableStateOf<List<ReferenceResolution>>(emptyList())
+    }
+
+    var referenceProgress by remember {
+        mutableStateOf<ReferenceBatchProgress?>(null)
+    }
+
 
     /*
      * ================================================================
@@ -106,6 +124,11 @@ fun ScanScreen(
     val textRecognizer =
         remember {
             TextRecognizerService()
+        }
+
+    val referenceResolver =
+        remember(resolver) {
+            ReferenceBatchResolver(resolver)
         }
 
 
@@ -162,6 +185,10 @@ fun ScanScreen(
         results =
             emptyList()
 
+        referenceOutcomes = emptyList()
+        referenceProgress = null
+        pendingReferences = emptyList()
+
 
         detectedType =
             null
@@ -214,6 +241,30 @@ fun ScanScreen(
         }
     }
 
+    suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
+        loading = true
+        errorMessage = null
+        results = emptyList()
+        referenceOutcomes = emptyList()
+        referenceProgress = null
+        detectedType = null
+        resolutionStatus = ResolutionStatus.VERIFIED
+
+        try {
+            val outcomes = referenceResolver.resolveAll(selected) { progress ->
+                referenceProgress = progress
+                referenceOutcomes = referenceOutcomes + progress.latest
+                results = referenceOutcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+            }
+            referenceOutcomes = outcomes
+            results = outcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+        } catch (exception: CancellationException) {
+            throw exception
+        } finally {
+            loading = false
+        }
+    }
+
 
     /*
      * ================================================================
@@ -254,6 +305,10 @@ fun ScanScreen(
                 rawOcrText =
                     ""
 
+                pendingReferences = emptyList()
+                referenceOutcomes = emptyList()
+                referenceProgress = null
+
 
                 try {
 
@@ -290,6 +345,16 @@ fun ScanScreen(
 
                     inputText =
                         bestQuery
+
+                    val references = ocrResult.evidence.references
+                    if (references.size > 1) {
+                        pendingReferences = references
+                        return@launch
+                    }
+                    if (references.size == 1 && bestQuery.isBlank()) {
+                        resolveReferences(references)
+                        return@launch
+                    }
 
 
                     if (
@@ -501,6 +566,16 @@ fun ScanScreen(
                 onOpenLibrary =
                     onLibraryClick
             )
+        }
+
+        referenceProgress?.let { progress ->
+            item {
+                ReferenceBatchSummary(
+                    outcomes = referenceOutcomes,
+                    completed = progress.completed,
+                    total = progress.total
+                )
+            }
         }
 
 
@@ -728,6 +803,17 @@ fun ScanScreen(
                 }
             )
         }
+    }
+
+    if (pendingReferences.isNotEmpty()) {
+        ReferenceSelectionDialog(
+            references = pendingReferences,
+            onDismiss = { pendingReferences = emptyList() },
+            onSearch = { selected ->
+                pendingReferences = emptyList()
+                coroutineScope.launch { resolveReferences(selected) }
+            }
+        )
     }
 }
 
