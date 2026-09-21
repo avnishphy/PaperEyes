@@ -1291,6 +1291,13 @@ fun LiveScanScreen(
                 previewView
             }
         )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
+        }
 
 
         /*
@@ -1407,13 +1414,6 @@ fun LiveScanScreen(
                     scanSubject.scanGuidance()
             }
         )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            )
-        }
     }
 
     if (pendingReferences.isNotEmpty()) {
