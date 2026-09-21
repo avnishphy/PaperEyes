@@ -26,5 +26,3 @@
 -keep class com.example.papereyes.data.remote.SemanticScholarPaper { *; }
 -keep class com.example.papereyes.data.remote.SemanticScholarAuthor { *; }
 -keep class com.example.papereyes.data.remote.SemanticScholarExternalIds { *; }
--keep class com.example.papereyes.data.remote.SemanticScholarMatchResponse { *; }
--keep class com.example.papereyes.data.remote.SemanticScholarPaperMatch { *; }

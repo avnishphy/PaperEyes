@@ -5,9 +5,13 @@ import com.example.papereyes.domain.citation.JournalCitation
 
 
 class InspireRepository(
-    private val api: InspireApi = InspireClient.api
+    private val api: InspireApi = InspireClient.api,
+    private val requestPolicy: ScholarlyRequestPolicy = ScholarlyRequestPolicy.shared
 ) {
 
+
+    private suspend fun searchLiterature(query: String, size: Int): InspireSearchResponse =
+        requestPolicy.request(ScholarlyProvider.INSPIRE) { api.searchLiterature(query, size) }
 
     /*
      * ================================================================
@@ -92,7 +96,7 @@ class InspireRepository(
         ) {
 
             val response =
-                api.searchLiterature(
+                searchLiterature(
                     query =
                         exactQuery,
 
@@ -146,7 +150,7 @@ class InspireRepository(
         ) {
 
             val response =
-                api.searchLiterature(
+                searchLiterature(
                     query =
                         metadataQuery,
 
@@ -200,7 +204,7 @@ class InspireRepository(
         ) {
 
             val response =
-                api.searchLiterature(
+                searchLiterature(
                     query =
                         pageQuery,
 
@@ -778,8 +782,9 @@ class InspireRepository(
 
     /**
      * A high normalized percentage is not enough when only weak fields were
-     * available. Require either locator + another matching field, or the
-     * strong journal/volume/year combination.
+     * available. Require journal + volume + locator, and no supplied
+     * contradictory field. Article numbers repeat between volumes, and
+     * journal/volume/year alone is not paper identity.
      */
     internal fun hasDistinctiveCitationIdentity(
         citation: JournalCitation,
@@ -806,8 +811,13 @@ class InspireRepository(
                 .any { locatorMatches(expected, it) }
         } ?: false
 
-        return (locatorMatched && (journalMatched || volumeMatched || yearMatched)) ||
-            (journalMatched && volumeMatched && yearMatched)
+        val contradiction =
+            (!publication.journalTitle.isNullOrBlank() && !journalMatched) ||
+            (citation.volume != null && !publication.journalVolume.isNullOrBlank() && !volumeMatched) ||
+            (citation.year != null && publication.year != null && !yearMatched) ||
+            (citation.issue != null && !publication.journalIssue.isNullOrBlank() &&
+                normalizeField(citation.issue) != normalizeField(publication.journalIssue))
+        return locatorMatched && journalMatched && volumeMatched && !contradiction
     }
 
 

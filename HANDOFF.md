@@ -1,84 +1,67 @@
-# PaperEyes production-hardening handoff
+# PaperEyes — implementation and verification handoff
 
-This archive is based on the supplied PaperEyes repository and contains the production-hardening changes plus the expanded test suite.
+Audit date: **September 20, 2026 (America/New_York)**. Some logs are dated September 21 in UTC.
 
-## Current development/release baseline
+## Start here
 
-- Room schema is version 4 and remains monotonic during development.
-- Room schema export is enabled.
-- No destructive migration fallback is present.
-- There is no released legacy schema to preserve yet; clear/uninstall incompatible pre-release app data when necessary.
-- `gradlew` is executable on Unix/macOS.
-- OpenCV and the unused perspective-correction implementation were removed.
+The supplied ZIP was the sole implementation baseline. It does **not** contain the described `DocumentLayoutAnalyzer` / preview-frame lookup baseline, and it cannot establish commit `83ff1ed`. Its actual Live Scan path uses preview OCR as a trigger, then still-image capture. This handoff preserves that capture architecture rather than claiming an unmeasured fast-path rewrite.
 
-## Live Scan architecture
+Implemented changes include shared layout/document evidence, safer identifiers and citation matching, a conservative interior-page discovery foundation, bounded caching and provider pacing, cancellation/resource ownership fixes, timing instrumentation, and canonical-title database upgrades. No paid API, embedded API credential, cloud OCR, or PaperEyes backend was added.
 
-The normal clean-scan path is now real-time:
+**Release status: not cleared for public beta.** Portable checks pass, but Android builds, lint, instrumentation, actual Import/Live Scan accuracy, and the requested live provider benchmark could not be verified in this environment. Gradle distribution download fails on DNS; an Android SDK/device is also absent. Do not interpret syntax checking or compile-only dependency shims as an Android build.
 
-1. CameraX `ImageAnalysis` at a preferred 1280x720 resolution.
-2. `STRATEGY_KEEP_ONLY_LATEST`; no fixed 650 ms polling delay.
-3. ML Kit consumes the current `media.Image` directly.
-4. OCR geometry is analyzed as a document layout rather than flattened into one text block.
-5. Relative line heights are clustered as a font-size proxy; the dominant prose cluster becomes the body-text baseline.
-6. DOI/arXiv identifiers can resolve immediately.
-7. Complete journal headers/citations (journal + volume + locator + year) are retained as strong structured evidence even when printed smaller than the title.
-8. Large-font adjacent lines are reconstructed into multi-line title candidates; single-size body-only frames intentionally produce no lookup query.
-9. Title OCR requires two rapidly agreeing observations.
-10. Semantic Scholar `/paper/search/match` is the interactive title fast path.
-11. Crossref/INSPIRE remain structured/fallback resolvers.
-12. A single 1080p `ImageCapture` still is used only after the live path has failed for about two seconds.
+| Executed check | Result |
+|---|---|
+| Actual Kotlin core + selected source test methods, portable runner | 100 passed, 0 failed |
+| All application/test Kotlin parsed with compiler PSI | 88 files, 0 syntax errors; no Android API/type checking |
+| Actual exported schema DDL exercised in SQLite | 7 passed; not Room runtime |
+| Provider benchmark harness self-tests | 9 passed; not API accuracy |
+| Source release invariant checker | Passed, 2 warnings |
+| Android Gradle clean/test/lint/debug/release/instrumentation | Not runnable: Gradle bootstrap DNS failure |
+| Live network provider benchmark | Not run: API DNS failures; real 50-paper corpus not assembled |
 
-Debug builds log OCR and final scan timing to Logcat using the tag `PaperEyesLiveScan`. No recognized title text is written to Logcat.
+Room remains **schema version 4**, unchanged from the supplied source. The previous HANDOFF statement that it was version 1 was incorrect. No destructive migration was introduced.
 
-## Import architecture
+## Reports and evidence
 
-Photo Picker remains the source-selection API. Imported images are passed directly from their `content://`/file URI to ML Kit via `InputImage.fromFilePath`, avoiding the previous custom 2400-pixel downsample that could remove small title detail.
+- `docs/AUDIT_REPORT.md`: A–V report and all twelve release questions.
+- `docs/CHANGES.md`: file-by-file source/test/tool changes against the supplied archive.
+- `docs/FILE_INVENTORY.md`: source/configuration inventory and review scope.
+- `docs/WORKLOG.md`: reproduction → regression → implementation → verification history.
+- `docs/BENCHMARK.md`: real-corpus contract, provider replay limits, and device timing procedure.
+- `docs/verification/`: baseline, intermediate reproduction, and final execution logs. Historical failing logs are intentionally retained; final results are identified by `final_`.
+- `docs/PACKAGE_CONTENTS.sha256`: packaged-file content manifest; excludes itself.
 
-Import and Live Scan now share the same `DocumentLayoutAnalyzer`, so identifiers, journal headers, relative font sizes and title grouping follow one policy instead of diverging.
+The final archive is additionally extracted into a clean directory and checked again. Its archive SHA-256 and the actual round-trip verification report are delivered separately to avoid a self-referential ZIP hash.
 
-## Verification performed in the handoff environment
+## Verification on an Android-capable machine
 
-- Source-level release invariant checker: PASS.
-- Pure Kotlin harness for identifier parsing, title extraction, OCR similarity, and live candidate gating: PASS.
-- Semantic Scholar Retrofit DTO/interface compile harness with stubs: PASS.
-- Android Gradle tasks could not execute in the handoff sandbox because the Gradle 9.6 distribution is not cached and DNS/network access to `services.gradle.org` is unavailable. This is an environment limitation, not a claimed Android build pass for these latest live-scan changes.
-
-The uploaded baseline immediately before these changes had already passed on the user's machine:
-
-- `testDebugUnitTest`
-- `lintDebug`
-- `assembleDebug`
-- `assembleRelease`
-- `connectedDebugAndroidTest` on a Pixel 7 Android 13 AVD
-
-Run the suite again after these live/import changes.
-
-## Run on your machine
-
-macOS/Linux:
+Keep the provided Gradle/Android/Kotlin dependency versions; they were not downgraded to suit this sandbox.
 
 ```bash
+./gradlew clean
 ./tools/verify.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
+.\gradlew.bat clean
 .\tools\verify.ps1
 ```
 
-The verification script runs:
+The regular verification scripts retain unit tests, lint, debug and release builds, and device tests when a device is connected. No lint check or Gradle test was disabled.
 
-1. release/source invariants
-2. `testDebugUnitTest`
-3. `lintDebug`
-4. `assembleDebug`
-5. `assembleRelease`
-6. `connectedDebugAndroidTest` when an Android device/emulator is connected
+Additional offline diagnostics, with Python 3 and a standalone Kotlin compiler (portable runner tested with Kotlin 1.9.0 and its bundled coroutine jar):
 
-## Before the first store release
+```bash
+python3 tools/verify_portable.py
+python3 tools/check_kotlin_syntax.py
+python3 tools/verify_schema.py
+python3 tools/test_benchmark_tools.py
+python3 tools/check_release_invariants.py
+```
 
-Two intentional product-owner decisions remain:
+The portable runner uses explicitly listed compile-only external type stubs. It does not execute Retrofit/Gson, Android, ML Kit, Compose, Room code generation, or the real JUnit runtime. Original MockWebServer tests remain in the project for the genuine Gradle suite.
 
-- Replace `com.example.papereyes` with your permanent application ID if that package name is not intended for release.
-- Crossref currently has no user-provided contact email, so PaperEyes remains on Crossref's public request-pool etiquette/rate limit rather than inventing contact information.
+Before release, resolve the permanent application ID, validate provider contracts/terms and real image/camera cases, run the minified release build, and complete actual device tests. Crossref remains in the public pool; no fictional contact email was inserted.

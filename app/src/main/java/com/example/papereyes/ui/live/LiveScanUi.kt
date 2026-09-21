@@ -334,7 +334,7 @@ fun LiveScanPermissionScreen(
 
             Text(
                 text =
-                    "PaperEyes uses the camera to recognize paper titles. No photo is saved.",
+                    "Images stay on-device. Selected text is sent to scholarly services; temporary camera files are removed after processing.",
 
                 style =
                     MaterialTheme
@@ -1273,15 +1273,10 @@ private fun LiveScanDebugPanel(
 
                     DebugRow(
                         label =
-                            "Match",
+                            "Title similarity (heuristic)",
 
                         value =
-                            "${
-                                (
-                                        score *
-                                                100.0
-                                        ).toInt()
-                            }%"
+                            String.format(java.util.Locale.ROOT, "%.2f", score)
                     )
                 }
 

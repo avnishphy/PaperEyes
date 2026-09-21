@@ -43,8 +43,8 @@ class InspireEvidenceTest {
     }
 
     @Test
-    fun locatorPlusJournalIsDistinctive() {
-        assertTrue(
+    fun locatorPlusJournalWithoutVolumeIsNotDistinctive() {
+        assertFalse(
             repository.hasDistinctiveCitationIdentity(
                 citation,
                 InspirePublicationInfo(
@@ -61,8 +61,19 @@ class InspireEvidenceTest {
     }
 
     @Test
-    fun journalVolumeYearCombinationIsDistinctiveWithoutLocator() {
-        assertTrue(
+    fun journalVolumeAndLocatorAreDistinctive() {
+        assertTrue(repository.hasDistinctiveCitationIdentity(
+            citation,
+            InspirePublicationInfo(
+                journalTitle = "Phys.Rev.D", journalVolume = "112", journalIssue = null,
+                year = 2025, artid = "034009", pageStart = null, pageEnd = null
+            )
+        ))
+    }
+
+    @Test
+    fun journalVolumeYearCannotIdentifyPaperWithoutRequestedLocator() {
+        assertFalse(
             repository.hasDistinctiveCitationIdentity(
                 citation,
                 InspirePublicationInfo(

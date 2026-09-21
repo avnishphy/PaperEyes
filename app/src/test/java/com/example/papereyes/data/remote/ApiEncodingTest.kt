@@ -59,27 +59,4 @@ class ApiEncodingTest {
         val requestUrl = server.takeRequest().requestUrl!!
         assertEquals("hep-ph/9901234", requestUrl.queryParameter("id_list"))
     }
-    @Test
-    fun semanticScholarTitleMatchEncodesQueryAsQueryParameter() = runBlocking {
-        server.enqueue(
-            MockResponse().setBody(
-                """{"data":[{"matchScore":101.0,"title":"Paper","year":2026,"url":null,"authors":[],"externalIds":{}}]}"""
-            ).addHeader("Content-Type", "application/json")
-        )
-
-        val api = Retrofit.Builder()
-            .baseUrl(server.url("/"))
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(SemanticScholarApi::class.java)
-
-        api.searchPaperMatch("Deep virtual Compton scattering & pions")
-        val request = server.takeRequest()
-        assertEquals("/paper/search/match", request.requestUrl?.encodedPath)
-        assertEquals(
-            "Deep virtual Compton scattering & pions",
-            request.requestUrl?.queryParameter("query")
-        )
-    }
-
 }

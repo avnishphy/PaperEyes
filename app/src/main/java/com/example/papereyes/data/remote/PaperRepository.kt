@@ -4,14 +4,13 @@ import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.citation.JournalAliases
 import com.example.papereyes.domain.citation.JournalCitation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.io.IOException
 
 
 class PaperRepository(
-    private val api: CrossrefApi = CrossrefClient.api
+    private val api: CrossrefApi = CrossrefClient.api,
+    private val requestPolicy: ScholarlyRequestPolicy = ScholarlyRequestPolicy.shared
 ) {
 
 
@@ -53,12 +52,7 @@ class PaperRepository(
             0.95
 
 
-        private val crossrefListMutex =
-            Mutex()
 
-
-        private var lastCrossrefListRequestNanos =
-            0L
     }
 
 
@@ -539,12 +533,13 @@ class PaperRepository(
             }
 
 
-        return response
-            .message
-            ?.toPaper()
-            ?: throw Exception(
-                "Crossref returned incomplete paper metadata."
-            )
+        val paper = response.message?.toPaper()
+            ?: throw Exception("Crossref returned incomplete paper metadata.")
+        val expected = com.example.papereyes.data.model.normalizePaperDoi(doi)
+            ?: throw IllegalArgumentException("Invalid DOI")
+        val actual = com.example.papereyes.data.model.normalizePaperDoi(paper.doi)
+        check(actual == expected) { "Crossref returned a different or missing DOI." }
+        return paper
     }
 
 
@@ -849,8 +844,13 @@ class PaperRepository(
             locatorMatched =
                 locatorMatched,
 
-            issueMatched =
-                issueMatched
+            issueMatched = issueMatched,
+            hasContradiction =
+                (journalNames.isNotEmpty() && !journalMatched) ||
+                (citation.volume != null && !item.volume.isNullOrBlank() && !volumeMatched) ||
+                (citation.year != null && crossrefYear != null && !yearMatched) ||
+                (citation.locator != null && crossrefLocators.isNotEmpty() && !locatorMatched) ||
+                (citation.issue != null && !item.issue.isNullOrBlank() && !issueMatched)
         )
     }
 
@@ -870,13 +870,13 @@ class PaperRepository(
      *
      * Strong identity cases:
      *
-     * locator + journal
-     * locator + volume
-     * locator + year
+     * journal + volume + article/page locator
      *
-     * OR:
+     * Article/page numbers can repeat between volumes. Known journal series
+     * and the volume are required before this route may verify identity.
      *
-     * journal + volume + year
+     * Journal + volume + year alone identifies a volume, not a paper.
+     * Missing article/page evidence must not produce a confident identity.
      */
     private fun isAcceptableCitationMatch(
         evidence: CitationEvidence
@@ -892,22 +892,10 @@ class PaperRepository(
 
 
         val locatorIdentity =
-            evidence.locatorMatched &&
-                    (
-                            evidence.journalMatched ||
-                                    evidence.volumeMatched ||
-                                    evidence.yearMatched
-                            )
+            evidence.locatorMatched && evidence.journalMatched && evidence.volumeMatched
 
 
-        val bibliographicIdentity =
-            evidence.journalMatched &&
-                    evidence.volumeMatched &&
-                    evidence.yearMatched
-
-
-        return locatorIdentity ||
-                bibliographicIdentity
+        return locatorIdentity && !evidence.hasContradiction
     }
 
 
@@ -976,6 +964,12 @@ class PaperRepository(
                 return 1.0
             }
 
+
+            // Known, different journals must not fuzzy-match. In particular,
+            // generic token matching discards single-letter series names.
+            if (JournalAliases.isKnown(citationJournal) && JournalAliases.isKnown(candidateName)) {
+                continue
+            }
 
             /*
              * Unknown journal aliases still get a generic token
@@ -1219,24 +1213,8 @@ class PaperRepository(
         }
 
 
-        /*
-         * Some metadata sources append information:
-         *
-         * 034009
-         * 034009-18PP
-         */
-        if (
-            expectedStart.length >=
-            5 &&
-            actualNormalized.startsWith(
-                expectedStart
-            )
-        ) {
-
-            return 0.90
-        }
-
-
+        // A numeric prefix is not article identity: 034009 != 0340099.
+        // Genuine page ranges already matched their starting page above.
         return 0.0
     }
 
@@ -1478,63 +1456,11 @@ class PaperRepository(
      * CROSSREF REQUEST CONTROL
      * ================================================================
      */
-    private suspend fun <T> crossrefListRequest(
-        block: suspend () -> T
-    ): T {
+    private suspend fun <T> crossrefListRequest(block: suspend () -> T): T =
+        retryCrossrefRequest { requestPolicy.request(ScholarlyProvider.CROSSREF, block) }
 
-        return crossrefListMutex.withLock {
-
-            val nowNanos =
-                System.nanoTime()
-
-
-            if (
-                lastCrossrefListRequestNanos != 0L
-            ) {
-
-                val elapsedMs =
-                    (
-                            nowNanos -
-                                    lastCrossrefListRequestNanos
-                            ) /
-                            1_000_000L
-
-
-                val waitMs =
-                    MIN_LIST_REQUEST_INTERVAL_MS -
-                            elapsedMs
-
-
-                if (waitMs > 0L) {
-                    delay(waitMs)
-                }
-            }
-
-
-            try {
-
-                retryCrossrefRequest(
-                    block
-                )
-
-            } finally {
-
-                lastCrossrefListRequestNanos =
-                    System.nanoTime()
-            }
-        }
-    }
-
-
-    private suspend fun <T> crossrefSingleRequest(
-        block: suspend () -> T
-    ): T {
-
-        return retryCrossrefRequest(
-            block
-        )
-    }
-
+    private suspend fun <T> crossrefSingleRequest(block: suspend () -> T): T =
+        retryCrossrefRequest { requestPolicy.request(ScholarlyProvider.CROSSREF, block) }
 
     private suspend fun <T> retryCrossrefRequest(
         block: suspend () -> T
@@ -1590,24 +1516,9 @@ class PaperRepository(
         exception: HttpException
     ): Long? {
 
-        val retryAfterSeconds = exception
-            .response()
-            ?.headers()
-            ?.get("Retry-After")
-            ?.trim()
-            ?.toLongOrNull()
-
-        if (retryAfterSeconds == null) {
-            return 1_050L
-        }
-
-        val requestedMillis = retryAfterSeconds
-            .coerceAtLeast(0L)
-            .times(1_000L)
-
-        return requestedMillis
-            .takeIf { it <= MAX_RETRY_AFTER_MS }
-            ?.coerceAtLeast(250L)
+        val requestedMillis = RetryAfter.millis(exception.response()?.headers()?.get("Retry-After"))
+            ?: return 1_050L
+        return requestedMillis.takeIf { it <= MAX_RETRY_AFTER_MS }?.coerceAtLeast(250L)
     }
 
 
@@ -1640,6 +1551,7 @@ class PaperRepository(
 
         val locatorMatched: Boolean,
 
+        val hasContradiction: Boolean,
         val issueMatched: Boolean
     )
 }

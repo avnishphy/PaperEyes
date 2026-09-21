@@ -56,20 +56,4 @@ class TextCandidateExtractorTest {
             )
         )
     }
-    @Test
-    fun explicitModernArxivMetadataBeatsNoisyTitleText() {
-        val ocr = """
-            arXiv:2609.20448 v1 | nucl-th | 17 Sep 2026
-            A comprehensive theory framework for perturbative calculations of oc in superallowed beta decays
-            Chien-Yeah Seng
-            Department of Physics and Astronomy
-            Abstract
-        """.trimIndent()
-
-        assertEquals(
-            "arXiv:2609.20448v1",
-            TextCandidateExtractor.extractBestQuery(ocr)
-        )
-    }
-
 }

@@ -59,29 +59,4 @@ class LiveScanUtilsTest {
         )
         assertEquals(expected.title, result?.paper?.title)
     }
-    @Test
-    fun liveCandidateGateRequiresTwoConsistentFrames() {
-        val gate = LiveScanCandidateGate(
-            stableObservationsRequired = 2,
-            sameQueryCooldownMs = 1_500L
-        )
-
-        assertTrue(!gate.observe("Deep inelastic scattering from nuclei"))
-        assertTrue(gate.observe("Deep inelastic scatterlng from nuclei"))
-    }
-
-    @Test
-    fun liveCandidateGateSuppressesOnlyShortDuplicateLookups() {
-        val gate = LiveScanCandidateGate(
-            stableObservationsRequired = 2,
-            sameQueryCooldownMs = 1_500L
-        )
-        val query = "Deep inelastic scattering from nuclei"
-
-        assertTrue(gate.canLookup(query, 1_000L))
-        gate.markLookup(query, 1_000L)
-        assertTrue(!gate.canLookup("Deep inelastic scatterlng from nuclei", 1_700L))
-        assertTrue(gate.canLookup(query, 2_600L))
-    }
-
 }

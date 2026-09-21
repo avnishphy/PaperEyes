@@ -6,6 +6,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.papereyes.data.model.Paper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +34,28 @@ class PaperDatabaseTest {
     }
 
     @After fun tearDown() = database.close()
+
+    @Test
+    fun canonicalTitleUpgradePreservesProjectMembership() = runBlocking {
+        val first = paperDao.insertOrGetPaper(paper("Generalized  Parton Distributions", 2023, null))
+        val repository = LibraryRepository(database)
+        val projectId = repository.createProject("Identity regression")!!
+        repository.addPaperToProject(first.paper, projectId)
+        val upgraded = paperDao.insertOrGetPaper(paper("Generalized Parton Distributions", 2023, "10.1000/upgrade-space"))
+        assertFalse(upgraded.inserted)
+        assertEquals(first.paper.id, upgraded.paper.id)
+        assertEquals(setOf(projectId), repository.getProjectIdsForPaper(upgraded.paper))
+        assertEquals(1, paperDao.getAllPapers().first().size)
+    }
+
+    @Test
+    fun concurrentDuplicateSavesRemainOneRow() = runBlocking {
+        val results = (1..20).map {
+            async(Dispatchers.IO) { paperDao.insertOrGetPaper(paper("Concurrent", 2025, "10.1000/concurrent")) }
+        }.awaitAll()
+        assertEquals(1, results.map { it.paper.id }.distinct().size)
+        assertEquals(1, paperDao.getAllPapers().first().size)
+    }
 
     @Test
     fun doiUrlAndBareDoiCollapseToOnePaper() = runBlocking {

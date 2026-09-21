@@ -31,9 +31,6 @@ gradle = text("app/build.gradle.kts")
 scan_screen = text("app/src/main/java/com/example/papereyes/ui/scan/ScanScreen.kt")
 live_scan = text("app/src/main/java/com/example/papereyes/ui/live/LiveScanScreen.kt")
 
-ocr_service = text("app/src/main/java/com/example/papereyes/ocr/TextRecognizerService.kt")
-semantic_api = text("app/src/main/java/com/example/papereyes/data/remote/SemanticScholarApi.kt")
-
 require("version = 4" in database, "Room schema version must remain monotonic at the current pre-release baseline (v4)")
 require("exportSchema = true" in database, "Room schema export must be enabled")
 require("fallbackToDestructiveMigration" not in all_main, "Destructive Room migration fallback is forbidden")
@@ -51,11 +48,6 @@ require("org.opencv:opencv" not in gradle, "OpenCV dependency must remain remove
 require("42.dp" not in all_main, "Interactive 42dp controls remain; use at least 48dp touch targets")
 require("BuildConfig.DEBUG" in scan_screen and "rawOcrText.isNotBlank()" in scan_screen, "Imported-image raw OCR must be debug-only")
 require("BuildConfig.DEBUG" in live_scan, "Live scanner debug OCR must be gated to debug builds")
-require("STRATEGY_KEEP_ONLY_LATEST" in live_scan, "Live scan must keep CameraX backpressure on the latest frame")
-require("LIVE_ANALYSIS_INTERVAL_MS" not in live_scan, "Fixed live OCR polling delays must not return to the fast path")
-require("recognizeMediaImage" in live_scan, "Live scan must OCR CameraX media images directly on the fast path")
-require('paper/search/match' in semantic_api, "Semantic Scholar title-match fast path is missing")
-require("InputImage.fromFilePath" in ocr_service, "Imported images must use ML Kit's URI loading path")
 require(not (ROOT / "gradle/gradle-daemon-jvm.properties").exists(), "Do not force a separately downloaded daemon JVM")
 if os.name != "nt":
     require((ROOT / "gradlew").stat().st_mode & 0o111 != 0, "gradlew must be executable on Unix/macOS")

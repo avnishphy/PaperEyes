@@ -1,0 +1,21 @@
+{
+  "kind": "connectivity_preflight_not_benchmark",
+  "utc": "2026-09-20T23:58:19.788231+00:00",
+  "providers": {
+    "openalex": {
+      "dns": "blocked",
+      "error_type": "gaierror",
+      "message": "[Errno -3] Temporary failure in name resolution"
+    },
+    "semantic_scholar": {
+      "dns": "blocked",
+      "error_type": "gaierror",
+      "message": "[Errno -3] Temporary failure in name resolution"
+    },
+    "crossref": {
+      "dns": "blocked",
+      "error_type": "gaierror",
+      "message": "[Errno -3] Temporary failure in name resolution"
+    }
+  }
+}

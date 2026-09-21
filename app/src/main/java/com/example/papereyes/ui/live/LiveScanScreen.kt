@@ -2,10 +2,17 @@ package com.example.papereyes.ui.live
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.SystemClock
-import android.util.Log
 import android.util.Size
+import android.util.Log
+import androidx.compose.runtime.withFrameNanos
+import com.example.papereyes.domain.ResolutionStatus
+import com.example.papereyes.domain.telemetry.ScanStage
+import com.example.papereyes.domain.telemetry.ScanTrace
+import com.example.papereyes.util.concurrency.CompletionGate
+import java.util.concurrent.Executor
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,9 +21,8 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
@@ -31,15 +37,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.PaperResolver
-import com.example.papereyes.ocr.DocumentLayoutAnalyzer
 import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.toUserFacingMessage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,176 +58,542 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-private const val LIVE_ANALYSIS_WIDTH = 1280
-private const val LIVE_ANALYSIS_HEIGHT = 720
-private const val FALLBACK_CAPTURE_WIDTH = 1920
-private const val FALLBACK_CAPTURE_HEIGHT = 1080
-private const val STABLE_TITLE_OBSERVATIONS = 2
-private const val SAME_QUERY_COOLDOWN_MS = 1_500L
-private const val HIGH_RES_FALLBACK_AFTER_MS = 2_000L
-private const val PAPER_MATCH_THRESHOLD = 0.60
-private const val TAG = "PaperEyesLiveScan"
 
-private class LiveCaptureException(message: String) : Exception(message)
+private const val LIVE_ANALYSIS_INTERVAL_MS =
+    650L
 
-private fun captureSingleFrame(
+private const val CAPTURE_COOLDOWN_MS =
+    1700L
+
+private const val LIVE_ANALYSIS_WIDTH =
+    1280
+
+private const val LIVE_ANALYSIS_HEIGHT =
+    720
+
+private const val FALLBACK_BURST_FRAME_COUNT =
+    2
+
+private const val SHARPNESS_MAX_DIMENSION =
+    900
+
+private const val PAPER_MATCH_THRESHOLD =
+    0.65
+
+
+/*
+ * ================================================================
+ * SUPER-BURST HIGH-RES CAPTURE
+ * ================================================================
+ *
+ * Preview OCR is deliberately only a cheap trigger. Once enough text is
+ * visible, capture several full-resolution JPEGs, score a small downsampled
+ * copy of each for sharpness, and OCR only the sharpest original JPEG.
+ *
+ * Only the tiny sharpness copies are decoded here. The selected JPEG is kept
+ * at camera resolution for ML Kit.
+ */
+private data class SharpFrame(
+    val file: File,
+    val score: Double
+)
+
+private fun captureBurst(
     cacheDir: File,
     imageCapture: ImageCapture,
-    executor: ExecutorService,
-    onCaptured: (File) -> Unit,
-    onError: (String) -> Unit
+    executor: Executor,
+    frameCount: Int,
+    onProgress: (captured: Int, total: Int) -> Unit,
+    onCaptured: (List<File>) -> Unit,
+    onError: (String) -> Unit,
+    isCancelled: () -> Boolean = { false }
 ) {
-    val outputFile =
-        try {
-            File.createTempFile("papereyes_live_", ".jpg", cacheDir)
-        } catch (_: Exception) {
-            onError("Could not create temporary image.")
-            return
-        }
+    val files = mutableListOf<File>()
+    var finished = false
 
-    val outputOptions = ImageCapture.OutputFileOptions
-        .Builder(outputFile)
-        .build()
-
-    imageCapture.takePicture(
-        outputOptions,
-        executor,
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(
-                outputFileResults: ImageCapture.OutputFileResults
-            ) {
-                onCaptured(outputFile)
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                outputFile.delete()
-                onError("Image capture failed.")
-            }
-        }
-    )
-}
-
-private suspend fun captureSingleFrameAwait(
-    cacheDir: File,
-    imageCapture: ImageCapture,
-    executor: ExecutorService
-): File = suspendCancellableCoroutine { continuation ->
-    var capturedFile: File? = null
-
-    continuation.invokeOnCancellation {
-        capturedFile?.delete()
+    fun fail(message: String, currentFile: File? = null) {
+        if (finished) return
+        finished = true
+        currentFile?.delete()
+        files.forEach(File::delete)
+        onError(message)
     }
 
-    captureSingleFrame(
-        cacheDir = cacheDir,
-        imageCapture = imageCapture,
-        executor = executor,
-        onCaptured = { file ->
-            capturedFile = file
-            if (continuation.isActive) {
-                continuation.resume(file)
-            } else {
-                file.delete()
+    fun captureNext() {
+        if (finished) return
+        if (isCancelled()) { fail("Capture cancelled"); return }
+
+        val outputFile =
+            try {
+                File.createTempFile(
+                    "papereyes_live_",
+                    ".jpg",
+                    cacheDir
+                )
+            } catch (_: Exception) {
+                fail("Could not create temporary image.")
+                return
             }
-        },
-        onError = { message ->
-            if (continuation.isActive) {
-                continuation.resumeWithException(LiveCaptureException(message))
+
+        val outputOptions =
+            ImageCapture.OutputFileOptions
+                .Builder(outputFile)
+                .build()
+
+        try {
+        imageCapture.takePicture(
+            outputOptions,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(
+                    outputFileResults: ImageCapture.OutputFileResults
+                ) {
+                    if (finished || isCancelled()) {
+                        outputFile.delete()
+                        fail("Capture cancelled")
+                        return
+                    }
+
+                    files += outputFile
+                    onProgress(files.size, frameCount)
+
+                    if (files.size >= frameCount) {
+                        finished = true
+                        onCaptured(files.toList())
+                    } else {
+                        captureNext()
+                    }
+                }
+
+                override fun onError(
+                    exception: ImageCaptureException
+                ) {
+                    fail(
+                        message = "Image capture failed.",
+                        currentFile = outputFile
+                    )
+                }
             }
+        )
+        } catch (_: Exception) {
+            fail("Image capture failed.", outputFile)
         }
-    )
+    }
+
+    captureNext()
 }
 
+
+private class LiveCaptureException(
+    message: String
+) : Exception(message)
+
+private suspend fun captureBurstAwait(
+    cacheDir: File,
+    imageCapture: ImageCapture,
+    executor: Executor,
+    frameCount: Int,
+    onProgress: (captured: Int, total: Int) -> Unit
+): List<File> {
+    val delivered = AtomicReference<List<File>?>(null)
+    val cancelled = AtomicBoolean(false)
+    return try {
+        val files = suspendCancellableCoroutine<List<File>> { continuation ->
+            continuation.invokeOnCancellation {
+                cancelled.set(true)
+                delivered.getAndSet(null)?.forEach(File::delete)
+            }
+            captureBurst(cacheDir, imageCapture, executor, frameCount, onProgress,
+                onCaptured = { captured ->
+                    delivered.set(captured)
+                    if (continuation.isActive) continuation.resume(captured)
+                    else delivered.getAndSet(null)?.forEach(File::delete)
+                },
+                onError = { message ->
+                    if (continuation.isActive) continuation.resumeWithException(LiveCaptureException(message))
+                },
+                isCancelled = cancelled::get)
+        }
+        delivered.set(null)
+        files
+    } catch (error: CancellationException) {
+        cancelled.set(true)
+        delivered.getAndSet(null)?.forEach(File::delete)
+        throw error
+    }
+}
+
+private fun selectSharpestFrame(
+    files: List<File>
+): SharpFrame? =
+    files
+        .asSequence()
+        .mapNotNull { file ->
+            runCatching {
+                SharpFrame(
+                    file = file,
+                    score = scoreSharpness(file)
+                )
+            }.getOrNull()
+        }
+        .maxByOrNull { it.score }
+
+private fun scoreSharpness(
+    file: File
+): Double {
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+
+    BitmapFactory.decodeFile(
+        file.absolutePath,
+        bounds
+    )
+
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        return Double.NEGATIVE_INFINITY
+    }
+
+    var sampleSize = 1
+    while (
+        bounds.outWidth / sampleSize > SHARPNESS_MAX_DIMENSION ||
+        bounds.outHeight / sampleSize > SHARPNESS_MAX_DIMENSION
+    ) {
+        sampleSize *= 2
+    }
+
+    val bitmap =
+        BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            }
+        ) ?: return Double.NEGATIVE_INFINITY
+
+    try {
+        val width = bitmap.width
+        val height = bitmap.height
+
+        if (width < 3 || height < 3) {
+            return Double.NEGATIVE_INFINITY
+        }
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(
+            pixels,
+            0,
+            width,
+            0,
+            0,
+            width,
+            height
+        )
+
+        fun luminance(color: Int): Int {
+            val red = color shr 16 and 0xFF
+            val green = color shr 8 and 0xFF
+            val blue = color and 0xFF
+            return (77 * red + 150 * green + 29 * blue) shr 8
+        }
+
+        var sum = 0.0
+        var sumSquares = 0.0
+        var count = 0
+
+        // A Laplacian-variance style score is inexpensive and works well for
+        // choosing the sharpest frame of the same document scene.
+        for (y in 1 until height - 1 step 2) {
+            val row = y * width
+
+            for (x in 1 until width - 1 step 2) {
+                val index = row + x
+
+                val center = luminance(pixels[index])
+                val left = luminance(pixels[index - 1])
+                val right = luminance(pixels[index + 1])
+                val up = luminance(pixels[index - width])
+                val down = luminance(pixels[index + width])
+
+                val laplacian =
+                    4 * center -
+                            left -
+                            right -
+                            up -
+                            down
+
+                val value = laplacian.toDouble()
+                sum += value
+                sumSquares += value * value
+                count += 1
+            }
+        }
+
+        if (count == 0) {
+            return Double.NEGATIVE_INFINITY
+        }
+
+        val mean = sum / count
+        return sumSquares / count - mean * mean
+    } finally {
+        bitmap.recycle()
+    }
+}
+
+
+/*
+ * ================================================================
+ * CHEAP LIVE OCR
+ * ================================================================
+ *
+ * This pass does not identify the paper.
+ *
+ * It answers only:
+ *
+ *      "Is there enough text visible to justify a burst?"
+ */
 @androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
+private fun analyzeForTextPresence(
+    imageProxy: ImageProxy,
+    recognizer: TextRecognizer,
+    completionGate: CompletionGate,
+    onText: (String, ScanTrace) -> Unit
+) {
+    val trace = ScanTrace().also { it.mark(ScanStage.FRAME_TIME) }
+    if (!completionGate.acquire()) { imageProxy.close(); return }
+    val image = try {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close(); completionGate.release(); return
+        }
+        InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+    } catch (_: Exception) {
+        imageProxy.close(); completionGate.release(); return
+    }
+    trace.mark(ScanStage.PREVIEW_OCR_START)
+    val task = try { recognizer.process(image) }
+    catch (_: Exception) { imageProxy.close(); completionGate.release(); return }
+    // Frame release is independent of a screen callback or executor shutdown.
+    task.addOnCompleteListener(Executor { it.run() }) {
+        trace.mark(ScanStage.PREVIEW_OCR_END)
+        try { imageProxy.close() } finally { completionGate.release() }
+    }
+    task.addOnSuccessListener { result -> onText(result.text, trace) }
+}
+
+
 @Composable
 fun LiveScanScreen(
     onBack: () -> Unit,
     onPaperClick: (Paper) -> Unit
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val coroutineScope = rememberCoroutineScope()
 
-    BackHandler { onBack() }
+    val context =
+        LocalContext.current
+
+
+    val lifecycleOwner =
+        LocalLifecycleOwner.current
+
+
+    val coroutineScope =
+        rememberCoroutineScope()
+
+
+    /*
+     * ================================================================
+     * NAVIGATION
+     * ================================================================
+     */
+    BackHandler {
+
+        onBack()
+    }
+
+
+    /*
+     * ================================================================
+     * STATE
+     * ================================================================
+     */
 
     var hasCameraPermission by remember {
+
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED
+            ) ==
+                    PackageManager.PERMISSION_GRANTED
         )
     }
 
+
     var statusMessage by remember {
-        mutableStateOf("Point PaperEyes toward the paper title")
+
+        mutableStateOf(
+            "Point PaperEyes toward the paper title"
+        )
     }
-    var highResCandidate by remember { mutableStateOf("") }
-    var matchScore by remember { mutableStateOf<Double?>(null) }
-    var captureInProgress by remember { mutableStateOf(false) }
-    var resolving by remember { mutableStateOf(false) }
-    var scanningLocked by remember { mutableStateOf(false) }
-    var papers by remember { mutableStateOf<List<Paper>>(emptyList()) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showDebug by remember { mutableStateOf(false) }
 
-    val resolver = remember { PaperResolver() }
-    val recognizer = remember { TextRecognizerService() }
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
-    val disposedRef = remember { AtomicBoolean(false) }
+    var highResCandidate by remember {
+
+        mutableStateOf("")
+    }
+
+
+    var matchScore by remember {
+
+        mutableStateOf<Double?>(null)
+    }
+
+
+    var captureInProgress by remember {
+
+        mutableStateOf(false)
+    }
+
+
+    var resolving by remember {
+
+        mutableStateOf(false)
+    }
+
+
+    var scanningLocked by remember {
+
+        mutableStateOf(false)
+    }
+
+
+    var papers by remember {
+
+        mutableStateOf<List<Paper>>(
+            emptyList()
+        )
+    }
+
+
+    var errorMessage by remember {
+
+        mutableStateOf<String?>(
+            null
+        )
+    }
+
+
+    /*
+     * Debug information is useful during scanner development,
+     * but should not dominate the normal UI.
+     */
+    var showDebug by remember {
+
+        mutableStateOf(false)
+    }
+
+
+    /*
+     * ================================================================
+     * SERVICES
+     * ================================================================
+     */
+
+    val resolver =
+        remember {
+
+            PaperResolver()
+        }
+
+
+    val highResRecognizer =
+        remember {
+
+            TextRecognizerService()
+        }
+
+
+    val liveRecognizer =
+        remember {
+
+            TextRecognition.getClient(
+                TextRecognizerOptions.DEFAULT_OPTIONS
+            )
+        }
+
+
+    val liveCompletionGate = remember(liveRecognizer) { CompletionGate { liveRecognizer.close() } }
+    var displayTrace by remember { mutableStateOf<ScanTrace?>(null) }
+
+    LaunchedEffect(displayTrace) {
+        val trace = displayTrace ?: return@LaunchedEffect
+        withFrameNanos { }
+        trace.mark(ScanStage.RESULT_DISPLAY)
+        if (BuildConfig.DEBUG) Log.i("PaperEyesTiming", trace.toNumericJson())
+        displayTrace = null
+    }
+
+    val cameraExecutor =
+        remember {
+
+            Executors.newSingleThreadExecutor()
+        }
+
+
+    val disposedRef = remember {
+        AtomicBoolean(false)
+    }
+
     val cameraProviderRef = remember {
         AtomicReference<ProcessCameraProvider?>(null)
     }
+
     val imageAnalysisRef = remember {
         AtomicReference<ImageAnalysis?>(null)
     }
 
-    // Scanner-session state is intentionally non-Compose state; mutating these
-    // counters must not trigger recomposition of the camera preview.
-    val candidateGate = remember {
-        LiveScanCandidateGate(
-            stableObservationsRequired = STABLE_TITLE_OBSERVATIONS,
-            sameQueryCooldownMs = SAME_QUERY_COOLDOWN_MS
-        )
-    }
-    val fallbackAttemptedRef = remember { AtomicBoolean(false) }
-    val lookupInProgressRef = remember { AtomicBoolean(false) }
-    val captureInProgressRef = remember { AtomicBoolean(false) }
-    val scanningLockedRef = remember { AtomicBoolean(false) }
-    val scanStartedAtRef = remember {
-        AtomicLong(SystemClock.elapsedRealtime())
-    }
 
-    fun resetScanTracking() {
-        candidateGate.reset()
-        fallbackAttemptedRef.set(false)
-        lookupInProgressRef.set(false)
-        captureInProgressRef.set(false)
-        scanningLockedRef.set(false)
-        scanStartedAtRef.set(SystemClock.elapsedRealtime())
-    }
-
+    /*
+     * ================================================================
+     * CLEANUP
+     * ================================================================
+     */
     DisposableEffect(Unit) {
+
         onDispose {
             disposedRef.set(true)
+
+            // CameraX is bound to the Activity lifecycle, which can outlive this
+            // composable. Explicitly detach the analyzer/use cases first.
             imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
             cameraProviderRef.getAndSet(null)?.unbindAll()
-            recognizer.close()
+
+            liveCompletionGate.close()
+            highResRecognizer.close()
             cameraExecutor.shutdown()
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted
-    }
+
+    /*
+     * ================================================================
+     * CAMERA PERMISSION
+     * ================================================================
+     */
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            hasCameraPermission =
+                granted
+        }
+
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -232,32 +607,96 @@ fun LiveScanScreen(
         }
     }
 
+
+    /*
+     * ================================================================
+     * PERMISSION SCREEN
+     * ================================================================
+     */
     if (!hasCameraPermission) {
+
         LiveScanPermissionScreen(
-            onBack = onBack,
+            onBack =
+                onBack,
+
             onAllowCamera = {
-                permissionLauncher.launch(Manifest.permission.CAMERA)
+
+                permissionLauncher.launch(
+                    Manifest.permission.CAMERA
+                )
             }
         )
+
         return
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+
+    /*
+     * ================================================================
+     * LIVE SCANNER
+     * ================================================================
+     */
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+    ) {
+
+        /*
+         * ------------------------------------------------------------
+         * CAMERA PREVIEW
+         * ------------------------------------------------------------
+         */
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier =
+                Modifier.fillMaxSize(),
+
             factory = { previewContext ->
-                val previewView = PreviewView(previewContext).apply {
-                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                    scaleType = PreviewView.ScaleType.FILL_CENTER
-                }
+
+                val previewView =
+                    PreviewView(
+                        previewContext
+                    )
+
+
+                previewView.implementationMode =
+                    PreviewView
+                        .ImplementationMode
+                        .COMPATIBLE
+
+
+                previewView.scaleType =
+                    PreviewView
+                        .ScaleType
+                        .FILL_CENTER
+
 
                 val cameraProviderFuture =
-                    ProcessCameraProvider.getInstance(previewContext)
+                    ProcessCameraProvider
+                        .getInstance(
+                            previewContext
+                        )
+
+
+                /*
+                 * These values belong to this CameraX session.
+                 */
+                var lastAnalysisTime =
+                    0L
+
+
+                var lastCaptureTime =
+                    0L
+
 
                 cameraProviderFuture.addListener(
                     {
+
                         try {
-                            val cameraProvider = cameraProviderFuture.get()
+
+                            val cameraProvider =
+                                cameraProviderFuture
+                                    .get()
+
                             if (disposedRef.get()) {
                                 cameraProvider.unbindAll()
                                 return@addListener
@@ -265,432 +704,519 @@ fun LiveScanScreen(
 
                             cameraProviderRef.set(cameraProvider)
 
-                            val preview = Preview.Builder().build().apply {
-                                setSurfaceProvider(previewView.surfaceProvider)
-                            }
 
-                            val analysisResolutionSelector =
-                                ResolutionSelector.Builder()
-                                    .setResolutionStrategy(
-                                        ResolutionStrategy(
-                                            Size(
-                                                LIVE_ANALYSIS_WIDTH,
-                                                LIVE_ANALYSIS_HEIGHT
-                                            ),
-                                            ResolutionStrategy
-                                                .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                                        )
+                            /*
+                             * ========================================
+                             * PREVIEW
+                             * ========================================
+                             */
+                            val preview =
+                                Preview
+                                    .Builder()
+                                    .build()
+
+
+                            preview.setSurfaceProvider(
+                                previewView
+                                    .surfaceProvider
+                            )
+
+
+                            /*
+                             * ========================================
+                             * HIGH-RES IMAGE CAPTURE
+                             * ========================================
+                             */
+                            val imageCapture =
+                                ImageCapture
+                                    .Builder()
+                                    .setCaptureMode(
+                                        ImageCapture
+                                            .CAPTURE_MODE_MINIMIZE_LATENCY
                                     )
                                     .build()
 
-                            val captureResolutionSelector =
-                                ResolutionSelector.Builder()
-                                    .setResolutionStrategy(
-                                        ResolutionStrategy(
-                                            Size(
-                                                FALLBACK_CAPTURE_WIDTH,
-                                                FALLBACK_CAPTURE_HEIGHT
-                                            ),
-                                            ResolutionStrategy
-                                                .FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+
+                            /*
+                             * ========================================
+                             * LOW-COST LIVE ANALYSIS
+                             * ========================================
+                             */
+                            val imageAnalysis =
+                                ImageAnalysis
+                                    .Builder()
+                                    .setTargetResolution(
+                                        Size(
+                                            LIVE_ANALYSIS_WIDTH,
+                                            LIVE_ANALYSIS_HEIGHT
                                         )
                                     )
+                                    .setBackpressureStrategy(
+                                        ImageAnalysis
+                                            .STRATEGY_KEEP_ONLY_LATEST
+                                    )
                                     .build()
-
-                            val imageCapture = ImageCapture.Builder()
-                                .setCaptureMode(
-                                    ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
-                                )
-                                .setResolutionSelector(captureResolutionSelector)
-                                .build()
-
-                            val imageAnalysis = ImageAnalysis.Builder()
-                                .setResolutionSelector(analysisResolutionSelector)
-                                .setBackpressureStrategy(
-                                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
-                                )
-                                .build()
 
                             imageAnalysisRef.set(imageAnalysis)
 
-                            suspend fun identifyCandidate(
-                                candidate: String,
-                                evidenceType: DocumentLayoutAnalyzer.EvidenceType,
-                                source: String,
-                                corroboratingTitle: String? = null,
-                                bypassCooldown: Boolean = false
-                            ): Boolean {
-                                if (
-                                    scanningLockedRef.get() ||
-                                    !lookupInProgressRef.compareAndSet(false, true)
-                                ) {
-                                    return false
+                            imageAnalysis.setAnalyzer(
+                                cameraExecutor
+                            ) { imageProxy ->
+
+                                if (disposedRef.get()) {
+                                    imageProxy.close()
+                                    return@setAnalyzer
                                 }
 
-                                val now = SystemClock.elapsedRealtime()
+                                val now =
+                                    SystemClock
+                                        .elapsedRealtime()
+
+
+                                /*
+                                 * Do not OCR every preview frame.
+                                 */
                                 if (
-                                    !bypassCooldown &&
-                                    !candidateGate.canLookup(candidate, now)
+                                    now -
+                                    lastAnalysisTime <
+                                    LIVE_ANALYSIS_INTERVAL_MS
                                 ) {
-                                    lookupInProgressRef.set(false)
-                                    return false
+
+                                    imageProxy.close()
+
+                                    return@setAnalyzer
                                 }
-                                candidateGate.markLookup(candidate, now)
-                                resolving = true
-                                errorMessage = null
-                                statusMessage = "Checking scholarly sources…"
 
-                                val networkStartedAt = SystemClock.elapsedRealtime()
 
-                                try {
-                                    val identifiedPaper: Paper?
-                                    val score: Double
+                                lastAnalysisTime =
+                                    now
 
-                                    when (evidenceType) {
-                                        DocumentLayoutAnalyzer.EvidenceType.DOI,
-                                        DocumentLayoutAnalyzer.EvidenceType.ARXIV -> {
-                                            val result = resolver.resolve(candidate)
-                                            identifiedPaper = result.papers.firstOrNull()
-                                            score = if (identifiedPaper != null) 1.0 else 0.0
-                                        }
 
-                                        DocumentLayoutAnalyzer.EvidenceType.JOURNAL_CITATION -> {
-                                            val result = resolver.resolve(candidate)
-                                            val title = corroboratingTitle
-                                                ?.trim()
-                                                ?.takeIf { it.isNotBlank() }
+                                analyzeForTextPresence(
+                                    imageProxy =
+                                        imageProxy,
 
-                                            val titleMatch = title?.let {
-                                                findBestPaperMatch(
-                                                    query = it,
-                                                    papers = result.papers
-                                                )
+                                    recognizer =
+                                        liveRecognizer,
+
+                                    completionGate = liveCompletionGate,
+                                    onText = { text, trace ->
+
+                                        coroutineScope.launch {
+
+                                            /*
+                                             * Once a paper has been found,
+                                             * stop initiating new bursts.
+                                             */
+                                            if (scanningLocked) {
+
+                                                return@launch
                                             }
 
-                                            identifiedPaper =
-                                                titleMatch?.paper ?: result.papers.firstOrNull()
-                                            score = titleMatch?.score
-                                                ?: if (identifiedPaper != null) 0.95 else 0.0
-                                        }
 
-                                        DocumentLayoutAnalyzer.EvidenceType.TITLE -> {
-                                            val fastPaper = resolver.resolveFastTitle(candidate)
-                                            val fastScore = fastPaper?.let {
-                                                titleSimilarity(candidate, it.title)
-                                            } ?: 0.0
+                                            val letterCount =
+                                                text.count { character ->
+                                                    character.isLetter()
+                                                }
 
+                                            // Preview OCR is intentionally permissive.
+                                            // It only decides whether a high-resolution
+                                            // burst is worth taking.
+                                            if (letterCount < 20 && !looksLikeIdentifier(text)) {
+                                                statusMessage =
+                                                    "Point PaperEyes toward the paper title"
+                                                return@launch
+                                            }
+
+                                            val captureTime =
+                                                SystemClock
+                                                    .elapsedRealtime()
+
+
+                                            /*
+                                             * Prevent overlapping capture
+                                             * and lookup operations.
+                                             */
                                             if (
-                                                fastPaper != null &&
-                                                fastScore >= PAPER_MATCH_THRESHOLD
+                                                captureInProgress ||
+                                                resolving ||
+                                                captureTime -
+                                                lastCaptureTime <
+                                                CAPTURE_COOLDOWN_MS
                                             ) {
-                                                identifiedPaper = fastPaper
-                                                score = fastScore
-                                            } else {
-                                                val result = resolver.resolve(candidate)
-                                                val bestMatch = findBestPaperMatch(
-                                                    query = candidate,
-                                                    papers = result.papers
-                                                )
 
-                                                identifiedPaper = bestMatch
-                                                    ?.takeIf {
-                                                        it.score >= PAPER_MATCH_THRESHOLD
-                                                    }
-                                                    ?.paper
-                                                score = bestMatch?.score ?: 0.0
+                                                return@launch
                                             }
-                                        }
-                                    }
 
-                                    matchScore = score.takeIf { it > 0.0 }
 
-                                    if (identifiedPaper != null) {
-                                        papers = listOf(identifiedPaper)
-                                        scanningLockedRef.set(true)
-                                        scanningLocked = true
-                                        statusMessage = "Paper identified"
+                                            lastCaptureTime =
+                                                captureTime
 
-                                        if (BuildConfig.DEBUG) {
-                                            val totalMs =
-                                                SystemClock.elapsedRealtime() -
-                                                        scanStartedAtRef.get()
-                                            val networkMs =
-                                                SystemClock.elapsedRealtime() -
-                                                        networkStartedAt
-                                            Log.d(
-                                                TAG,
-                                                "identified source=$source total=${totalMs}ms network=${networkMs}ms"
-                                            )
-                                        }
 
-                                        return true
-                                    }
+                                            /*
+                                             * =================================
+                                             * START CAPTURE
+                                             * =================================
+                                             */
+                                            captureInProgress =
+                                                true
 
-                                    statusMessage =
-                                        "No convincing match — keep the title in view"
-                                    return false
-                                } catch (exception: CancellationException) {
-                                    throw exception
-                                } catch (exception: Exception) {
-                                    errorMessage = exception.toUserFacingMessage(
-                                        "Paper lookup failed. Check your connection and try again."
-                                    )
-                                    statusMessage = "Lookup failed — trying again"
-                                    return false
-                                } finally {
-                                    resolving = false
-                                    lookupInProgressRef.set(false)
-                                }
-                            }
 
-                            suspend fun runHighResolutionFallback() {
-                                if (
-                                    scanningLockedRef.get() ||
-                                    lookupInProgressRef.get()
-                                ) {
-                                    return
-                                }
+                                            errorMessage =
+                                                null
 
-                                if (!fallbackAttemptedRef.compareAndSet(false, true)) {
-                                    return
-                                }
 
-                                if (!captureInProgressRef.compareAndSet(false, true)) {
-                                    fallbackAttemptedRef.set(false)
-                                    return
-                                }
+                                            highResCandidate =
+                                                ""
 
-                                captureInProgress = true
-                                statusMessage = "Refining scan…"
-                                var file: File? = null
 
-                                try {
-                                    file = captureSingleFrameAwait(
-                                        cacheDir = context.cacheDir,
-                                        imageCapture = imageCapture,
-                                        executor = cameraExecutor
-                                    )
+                                            matchScore =
+                                                null
 
-                                    statusMessage = "Reading high-resolution title…"
-                                    val ocrResult = recognizer.recognizeCameraCapture(
-                                        context = context,
-                                        uri = Uri.fromFile(file)
-                                    )
-                                    val preferred = ocrResult.evidence.preferred
-                                    val candidate = preferred?.query.orEmpty().trim()
-                                    highResCandidate = candidate
 
-                                    if (preferred == null || !isGoodCandidate(candidate)) {
-                                        statusMessage =
-                                            "Couldn't find distinctive paper metadata"
-                                        return
-                                    }
-
-                                    identifyCandidate(
-                                        candidate = candidate,
-                                        evidenceType = preferred.type,
-                                        source = "high-res-fallback",
-                                        corroboratingTitle = ocrResult.evidence.bestTitle?.text,
-                                        bypassCooldown = true
-                                    )
-                                } catch (exception: CancellationException) {
-                                    throw exception
-                                } catch (exception: LiveCaptureException) {
-                                    errorMessage = exception.message
-                                    statusMessage = "Capture failed"
-                                } catch (exception: Exception) {
-                                    errorMessage = exception.toUserFacingMessage(
-                                        "OCR failed. Try another scan."
-                                    )
-                                    statusMessage = "OCR failed — trying again"
-                                } finally {
-                                    file?.delete()
-                                    captureInProgress = false
-                                    captureInProgressRef.set(false)
-                                }
-                            }
-
-                            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                if (
-                                    disposedRef.get() ||
-                                    scanningLockedRef.get() ||
-                                    lookupInProgressRef.get() ||
-                                    captureInProgressRef.get()
-                                ) {
-                                    imageProxy.close()
-                                    return@setAnalyzer
-                                }
-
-                                val mediaImage = imageProxy.image
-                                if (mediaImage == null) {
-                                    imageProxy.close()
-                                    return@setAnalyzer
-                                }
-
-                                val frameStartedAt = SystemClock.elapsedRealtime()
-
-                                coroutineScope.launch {
-                                    var proxyClosed = false
-
-                                    suspend fun runFallbackAfterClosingProxy() {
-                                        if (!proxyClosed) {
-                                            imageProxy.close()
-                                            proxyClosed = true
-                                        }
-                                        runHighResolutionFallback()
-                                    }
-
-                                    try {
-                                        val ocrResult = recognizer.recognizeMediaImage(
-                                            mediaImage = mediaImage,
-                                            rotationDegrees =
-                                                imageProxy.imageInfo.rotationDegrees
-                                        )
-
-                                        // ML Kit has finished consuming the media image.
-                                        // Release CameraX immediately; network lookup must not
-                                        // hold an ImageProxy and stall the analysis stream.
-                                        if (!proxyClosed) {
-                                            imageProxy.close()
-                                            proxyClosed = true
-                                        }
-
-                                        val preferred = ocrResult.evidence.preferred
-                                        val candidate = preferred?.query.orEmpty().trim()
-                                        if (BuildConfig.DEBUG) {
-                                            highResCandidate = candidate
-                                        }
-
-                                        val letterCount =
-                                            ocrResult.rawText.count(Char::isLetter)
-
-                                        if (preferred == null || !isGoodCandidate(candidate)) {
-                                            candidateGate.resetCandidate()
                                             statusMessage =
-                                                if (letterCount >= 20) {
-                                                    "Reading document layout…"
-                                                } else {
-                                                    "Point PaperEyes toward distinctive metadata"
-                                                }
+                                                "Text detected — capturing…"
 
-                                            val elapsed =
-                                                SystemClock.elapsedRealtime() -
-                                                        scanStartedAtRef.get()
-                                            if (
-                                                letterCount >= 20 &&
-                                                elapsed >= HIGH_RES_FALLBACK_AFTER_MS
-                                            ) {
-                                                runFallbackAfterClosingProxy()
-                                            }
-                                            return@launch
-                                        }
 
-                                        val isExactOrStructuredEvidence =
-                                            preferred.type !=
-                                                DocumentLayoutAnalyzer.EvidenceType.TITLE
+                                            coroutineScope.launch {
+                                                val capturedFiles =
+                                                    mutableListOf<File>()
 
-                                        if (isExactOrStructuredEvidence) {
-                                            candidateGate.resetCandidate()
-                                            identifyCandidate(
-                                                candidate = candidate,
-                                                evidenceType = preferred.type,
-                                                source = "live-${preferred.type.name.lowercase()}",
-                                                corroboratingTitle =
-                                                    ocrResult.evidence.bestTitle?.text
-                                            )
-                                            return@launch
-                                        }
+                                                try {
+                                                    /*
+                                                     * Fast path: one full-resolution frame.
+                                                     * Most clean scans should never pay for the
+                                                     * two extra CameraX captures.
+                                                     */
+                                                    trace.mark(ScanStage.CAPTURE_START)
+                                                    val firstFrame =
+                                                        captureBurstAwait(
+                                                            cacheDir = context.cacheDir,
+                                                            imageCapture = imageCapture,
+                                                            executor = ContextCompat.getMainExecutor(context),
+                                                            frameCount = 1,
+                                                            onProgress = { _, _ ->
+                                                                statusMessage =
+                                                                    "Captured — reading title…"
+                                                            }
+                                                        ).single()
 
-                                        val stable = candidateGate.observe(candidate)
-                                        statusMessage = "Reading title…"
+                                                    trace.mark(ScanStage.CAPTURE_END)
+                                                    capturedFiles += firstFrame
 
-                                        if (stable) {
-                                            val identified = identifyCandidate(
-                                                candidate = candidate,
-                                                evidenceType = preferred.type,
-                                                source = "live-title",
-                                                corroboratingTitle =
-                                                    ocrResult.evidence.bestTitle?.text
-                                            )
+                                                    statusMessage =
+                                                        "Reading title…"
 
-                                            if (!identified) {
-                                                val elapsed =
-                                                    SystemClock.elapsedRealtime() -
-                                                            scanStartedAtRef.get()
-                                                if (
-                                                    elapsed >=
-                                                    HIGH_RES_FALLBACK_AFTER_MS
+                                                    var ocrResult = highResRecognizer.recognizeCameraCapture(
+                                                        context, Uri.fromFile(firstFrame), trace)
+                                                    var candidate = ocrResult.bestQuery.trim()
+
+                                                    /*
+                                                     * Adaptive Super Burst fallback. If the first
+                                                     * native-resolution OCR result is weak, capture
+                                                     * two more frames, choose the sharper fallback
+                                                     * frame, and OCR that original JPEG. Difficult
+                                                     * scans still get the historical three-frame
+                                                     * behavior, while normal scans finish much faster.
+                                                     */
+                                                    if (!isGoodCandidate(candidate) && ocrResult.evidence.fingerprints.isEmpty()) {
+                                                        statusMessage =
+                                                            "First frame unclear — capturing 2 more…"
+
+                                                        trace.mark(ScanStage.CAPTURE_START)
+                                                        val fallbackFrames =
+                                                            captureBurstAwait(
+                                                                cacheDir = context.cacheDir,
+                                                                imageCapture = imageCapture,
+                                                                executor = ContextCompat.getMainExecutor(context),
+                                                                frameCount = FALLBACK_BURST_FRAME_COUNT,
+                                                                onProgress = { captured, total ->
+                                                                    statusMessage =
+                                                                        "Improving capture $captured/$total…"
+                                                                }
+                                                            )
+
+                                                        trace.mark(ScanStage.CAPTURE_END)
+                                                        capturedFiles += fallbackFrames
+
+                                                        statusMessage =
+                                                            "Selecting sharpest frame…"
+
+                                                        val sharpestFallback =
+                                                            withContext(Dispatchers.Default) {
+                                                                selectSharpestFrame(fallbackFrames)
+                                                            }
+
+                                                        if (sharpestFallback == null) {
+                                                            errorMessage =
+                                                                "Could not evaluate captured images."
+                                                            statusMessage =
+                                                                "Capture failed"
+                                                            return@launch
+                                                        }
+
+                                                        statusMessage =
+                                                            "Reading title…"
+
+                                                        ocrResult = highResRecognizer.recognizeCameraCapture(
+                                                            context, Uri.fromFile(sharpestFallback.file), trace)
+                                                        candidate = ocrResult.bestQuery.trim()
+                                                    }
+
+                                                    highResCandidate =
+                                                        candidate
+
+                                                    if (!isGoodCandidate(candidate) && ocrResult.evidence.fingerprints.isEmpty()) {
+                                                        statusMessage =
+                                                            "Couldn't read enough of the title"
+                                                        return@launch
+                                                    }
+
+                                                    resolving =
+                                                        true
+
+                                                    statusMessage =
+                                                        "Checking scholarly sources…"
+
+                                                    val result =
+                                                        try {
+                                                            trace.mark(ScanStage.LOOKUP_START)
+                                                            try { resolver.resolveEvidence(ocrResult.evidence) }
+                                                            finally { trace.mark(ScanStage.LOOKUP_END) }
+                                                        } catch (
+                                                            exception: CancellationException
+                                                        ) {
+                                                            throw exception
+                                                        } catch (
+                                                            exception: Exception
+                                                        ) {
+                                                            errorMessage =
+                                                                exception.toUserFacingMessage(
+                                                                    "Paper lookup failed. Check your connection and try again."
+                                                                )
+                                                            statusMessage =
+                                                                "Lookup failed — trying again"
+                                                            null
+                                                        }
+
+                                                    if (result == null) {
+                                                        return@launch
+                                                    }
+
+                                                    if (result.papers.isEmpty()) {
+                                                        papers = emptyList()
+                                                        statusMessage =
+                                                            "No convincing match — trying another scan"
+                                                        return@launch
+                                                    }
+
+                                                    if (result.status == ResolutionStatus.VERIFIED) {
+                                                        papers =
+                                                            listOf(result.papers.first())
+                                                        matchScore = null
+                                                        scanningLocked = true
+                                                        displayTrace = trace
+                                                        statusMessage =
+                                                            "Paper identified"
+                                                        return@launch
+                                                    }
+
+                                                    if (result.inputType == com.example.papereyes.domain.PaperInputType.INTERIOR_TEXT) {
+                                                        papers = emptyList()
+                                                        statusMessage = "Interior text is uncertain — try the title or import the page"
+                                                        return@launch
+                                                    }
+
+                                                    val bestMatch =
+                                                        findConfidentPaperMatch(
+                                                            query = candidate,
+                                                            papers = result.papers
+                                                        )
+
+                                                    matchScore =
+                                                        bestMatch?.score
+
+                                                    if (
+                                                        bestMatch != null &&
+                                                        bestMatch.score >=
+                                                        PAPER_MATCH_THRESHOLD
+                                                    ) {
+                                                        papers =
+                                                            listOf(bestMatch.paper)
+                                                        scanningLocked = true
+                                                        displayTrace = trace
+                                                        statusMessage =
+                                                            "Paper identified"
+                                                    } else {
+                                                        papers = emptyList()
+                                                        statusMessage =
+                                                            "Title unclear — trying another scan"
+                                                    }
+                                                } catch (
+                                                    exception: CancellationException
                                                 ) {
-                                                    runFallbackAfterClosingProxy()
+                                                    throw exception
+                                                } catch (
+                                                    exception: LiveCaptureException
+                                                ) {
+                                                    errorMessage =
+                                                        exception.message ?:
+                                                                "Image capture failed."
+                                                    statusMessage =
+                                                        "Capture failed"
+                                                } catch (
+                                                    exception: Exception
+                                                ) {
+                                                    errorMessage =
+                                                        exception.toUserFacingMessage(
+                                                            "OCR failed. Try another scan."
+                                                        )
+                                                    statusMessage =
+                                                        "OCR failed — trying again"
+                                                } finally {
+                                                    capturedFiles.forEach(File::delete)
+                                                    captureInProgress = false
+                                                    resolving = false
                                                 }
                                             }
-                                        }
-
-                                        if (BuildConfig.DEBUG) {
-                                            val ocrMs =
-                                                SystemClock.elapsedRealtime() -
-                                                        frameStartedAt
-                                            Log.d(TAG, "live OCR=${ocrMs}ms")
-                                        }
-                                    } catch (exception: CancellationException) {
-                                        throw exception
-                                    } catch (_: Exception) {
-                                        // An isolated preview OCR failure should not stop
-                                        // the camera stream. The next latest frame is used.
-                                    } finally {
-                                        if (!proxyClosed) {
-                                            imageProxy.close()
                                         }
                                     }
-                                }
+                                )
                             }
 
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageAnalysis,
-                                imageCapture
-                            )
-                            scanStartedAtRef.set(SystemClock.elapsedRealtime())
-                        } catch (_: Exception) {
-                            errorMessage = "Could not start camera."
+
+                            /*
+                             * ========================================
+                             * BIND CAMERA
+                             * ========================================
+                             */
+                            cameraProvider
+                                .unbindAll()
+
+
+                            cameraProvider
+                                .bindToLifecycle(
+                                    lifecycleOwner,
+
+                                    CameraSelector
+                                        .DEFAULT_BACK_CAMERA,
+
+                                    preview,
+
+                                    imageAnalysis,
+
+                                    imageCapture
+                                )
+
+                        } catch (
+                            exception:
+                            Exception
+                        ) {
+
+                            errorMessage =
+                                "Could not start camera."
                         }
                     },
-                    ContextCompat.getMainExecutor(previewContext)
+
+                    ContextCompat
+                        .getMainExecutor(
+                            previewContext
+                        )
                 )
+
 
                 previewView
             }
         )
 
+
+        /*
+         * ============================================================
+         * PRESENTATION LAYER
+         * ============================================================
+         *
+         * Everything visible on top of the preview now lives in
+         * LiveScanUi.kt.
+         */
         LiveScanOverlay(
-            statusMessage = statusMessage,
-            highResCandidate = highResCandidate,
-            matchScore = matchScore,
-            captureInProgress = captureInProgress,
-            resolving = resolving,
-            scanningLocked = scanningLocked,
-            errorMessage = errorMessage,
-            paper = papers.firstOrNull(),
-            showDebug = BuildConfig.DEBUG && showDebug,
-            debugAvailable = BuildConfig.DEBUG,
-            onBack = onBack,
+            statusMessage =
+                statusMessage,
+
+            highResCandidate =
+                highResCandidate,
+
+            matchScore =
+                matchScore,
+
+            captureInProgress =
+                captureInProgress,
+
+            resolving =
+                resolving,
+
+            scanningLocked =
+                scanningLocked,
+
+            errorMessage =
+                errorMessage,
+
+            paper =
+                papers.firstOrNull(),
+
+            showDebug =
+                BuildConfig.DEBUG && showDebug,
+
+            debugAvailable =
+                BuildConfig.DEBUG,
+
+            onBack =
+                onBack,
+
             onToggleDebug = {
-                if (BuildConfig.DEBUG) showDebug = !showDebug
+                if (BuildConfig.DEBUG) {
+                    showDebug = !showDebug
+                }
             },
-            onOpenPaper = onPaperClick,
+
+            onOpenPaper = { paper ->
+
+                onPaperClick(
+                    paper
+                )
+            },
+
             onScanAgain = {
-                papers = emptyList()
-                highResCandidate = ""
-                matchScore = null
-                errorMessage = null
-                captureInProgress = false
-                resolving = false
-                scanningLocked = false
-                statusMessage = "Point PaperEyes toward the paper title"
-                resetScanTracking()
+
+                papers =
+                    emptyList()
+
+
+                highResCandidate =
+                    ""
+
+
+                matchScore =
+                    null
+
+
+                errorMessage =
+                    null
+
+
+                captureInProgress =
+                    false
+
+
+                resolving =
+                    false
+
+
+                scanningLocked =
+                    false
+
+
+                statusMessage =
+                    "Point PaperEyes toward the paper title"
             }
         )
     }

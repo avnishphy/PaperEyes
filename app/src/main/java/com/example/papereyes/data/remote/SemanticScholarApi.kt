@@ -16,40 +16,18 @@ interface SemanticScholarApi {
         fields: String =
             "title,authors,year,url,externalIds"
     ): SemanticScholarPaper
-
-    /**
-     * Semantic Scholar's title-match endpoint returns the single closest title
-     * match and is intended for interactive title retrieval.
-     */
-    @GET("paper/search/match")
-    suspend fun searchPaperMatch(
-        @Query("query")
-        query: String,
-
-        @Query("fields")
-        fields: String =
-            "title,authors,year,url,externalIds"
-    ): SemanticScholarMatchResponse
 }
 
-data class SemanticScholarMatchResponse(
-    val data: List<SemanticScholarPaperMatch>?
-)
-
-data class SemanticScholarPaperMatch(
-    val matchScore: Double?,
-    val title: String?,
-    val year: Int?,
-    val url: String?,
-    val authors: List<SemanticScholarAuthor>?,
-    val externalIds: SemanticScholarExternalIds?
-)
-
 data class SemanticScholarPaper(
+
     val title: String?,
+
     val year: Int?,
+
     val url: String?,
+
     val authors: List<SemanticScholarAuthor>?,
+
     val externalIds: SemanticScholarExternalIds?
 )
 

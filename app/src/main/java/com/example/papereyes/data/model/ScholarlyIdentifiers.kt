@@ -14,20 +14,19 @@ object ScholarlyIdentifiers {
         option = RegexOption.IGNORE_CASE
     )
 
-    private val modernArxivRegex = Regex(
-        pattern = """(?<![A-Z0-9])(\d{4}\.\d{4,5})(?:\s*v\s*(\d+))?(?![A-Z0-9])""",
-        option = RegexOption.IGNORE_CASE
+    // Only horizontal OCR spacing is repaired; never substitute l/O globally.
+    // A malformed version suffix is rejected instead of becoming a title.
+    private const val MODERN_ARXIV = """\d{2}(?:0[1-9]|1[0-2])\.\d{4,5}"""
+    private const val LEGACY_ARXIV = """[A-Z][A-Z0-9.-]*/\d{7}"""
+    private val arxivRegex = Regex(
+        """(?<![A-Z0-9])($MODERN_ARXIV|$LEGACY_ARXIV)(?:[ \t]*v[ \t]*([1-9]\d*))?(?![A-Z0-9])""",
+        RegexOption.IGNORE_CASE
     )
-
-    private val legacyArxivRegex = Regex(
-        pattern = """(?<![A-Z0-9])[A-Z][A-Z0-9.-]*/\d{7}(?:v\d+)?(?![A-Z0-9])""",
-        option = RegexOption.IGNORE_CASE
-    )
-
     private val arxivDoiRegex = Regex(
-        pattern = """10\.48550/arxiv\.(\d{4}\.\d{4,5}(?:v\d+)?)""",
-        option = RegexOption.IGNORE_CASE
+        """10\.48550/arxiv\.($MODERN_ARXIV)(?:[ \t]*v[ \t]*([1-9]\d*))?(?![A-Z0-9])""",
+        RegexOption.IGNORE_CASE
     )
+    private val damagedVersionSuffix = Regex("""^[ \t]*v(?:\b|[ \t])""", RegexOption.IGNORE_CASE)
 
     private val doiPrefixRegex = Regex(
         pattern = """^(?:doi\s*:\s*|https?://(?:dx\.)?doi\.org/)""",
@@ -67,47 +66,33 @@ object ScholarlyIdentifiers {
             .toList()
 
     fun extractArxivDoiId(text: String): String? =
-        arxivDoiRegex.find(text.trim())
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.lowercase(Locale.ROOT)
+        arxivDoiRegex.findAll(text).mapNotNull { canonicalArxivMatch(it, text) }.firstOrNull()
 
     fun extractArxivId(raw: String): String? {
-        var value = raw.trim()
-            .replace(arxivPrefixRegex, "")
-            .trim()
-
-        if (value.endsWith(".pdf", ignoreCase = true)) {
-            value = value.dropLast(4).trim()
-        }
-
-        return modernArxivRegex.find(value)?.let(::canonicalizeModernArxivMatch)
-            ?: legacyArxivRegex.find(value)?.value
-                ?.lowercase(Locale.ROOT)
+        val value = raw.trim().replace(arxivPrefixRegex, "").removeSuffix(".pdf")
+        return arxivRegex.findAll(value)
+            .mapNotNull { canonicalArxivMatch(it, value) }.firstOrNull()
     }
 
-    fun extractAllArxivIds(text: String): List<String> = buildList {
-        modernArxivRegex.findAll(text).forEach { add(canonicalizeModernArxivMatch(it)) }
-        legacyArxivRegex.findAll(text).forEach { add(it.value.lowercase(Locale.ROOT)) }
-    }.distinct()
+    fun extractAllArxivIds(text: String): List<String> =
+        arxivRegex.findAll(text).mapNotNull { canonicalArxivMatch(it, text) }.distinct().toList()
+
+    /** A work-level key, for services that do not index arXiv versions. */
+    fun arxivWorkId(raw: String): String? = extractArxivId(raw)?.replace(Regex("""v[1-9]\d*$"""), "")
+
+    private fun canonicalArxivMatch(match: MatchResult, source: String): String? {
+        val version = match.groupValues[2]
+        if (version.isEmpty() && damagedVersionSuffix.containsMatchIn(source.substring(match.range.last + 1))) {
+            return null
+        }
+        return match.groupValues[1].lowercase(Locale.ROOT) +
+            if (version.isNotEmpty()) "v$version" else ""
+    }
 
     fun looksLikeIdentifier(text: String): Boolean =
         extractDoi(text) != null ||
-                extractArxivDoiId(text) != null ||
-                extractArxivId(text) != null
-
-    private fun canonicalizeModernArxivMatch(match: MatchResult): String {
-        val base = match.groupValues.getOrNull(1).orEmpty()
-        val version = match.groupValues.getOrNull(2).orEmpty()
-
-        return buildString {
-            append(base)
-            if (version.isNotBlank()) {
-                append('v')
-                append(version)
-            }
-        }.lowercase(Locale.ROOT)
-    }
+            extractArxivDoiId(text) != null ||
+            extractArxivId(text) != null
 
     private fun trimDoiCitationPunctuation(raw: String): String {
         var value = raw.trim().trimEnd('.', ',', ';')

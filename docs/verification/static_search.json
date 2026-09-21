@@ -1,0 +1,49 @@
+{
+  "scope": "app/src/main text Kotlin/XML/keep rules",
+  "interpretation": "Matches require context; canonical DOI URLs/XML namespaces and CameraX opt-ins are not automatically vulnerabilities. No new lint suppressions were introduced.",
+  "matches": {
+    "TODO": [],
+    "FIXME": [],
+    "HACK": [],
+    "GlobalScope": [],
+    "runBlocking": [],
+    "Thread.sleep": [],
+    "HttpURLConnection": [],
+    "fallbackToDestructiveMigration": [],
+    "printStackTrace": [],
+    "http://": [
+      {
+        "path": "app/src/main/AndroidManifest.xml",
+        "line": 2,
+        "text": "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">"
+      },
+      {
+        "path": "app/src/main/res/drawable/ic_launcher_background.xml",
+        "line": 2,
+        "text": "<vector xmlns:android=\"http://schemas.android.com/apk/res/android\""
+      },
+      {
+        "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+        "line": 1,
+        "text": "<vector xmlns:android=\"http://schemas.android.com/apk/res/android\""
+      },
+      {
+        "path": "app/src/main/res/drawable/ic_launcher_foreground.xml",
+        "line": 2,
+        "text": "xmlns:aapt=\"http://schemas.android.com/aapt\""
+      },
+      {
+        "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+        "line": 2,
+        "text": "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">"
+      },
+      {
+        "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+        "line": 2,
+        "text": "<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">"
+      }
+    ],
+    "@Suppress": [],
+    "SuppressLint": []
+  }
+}

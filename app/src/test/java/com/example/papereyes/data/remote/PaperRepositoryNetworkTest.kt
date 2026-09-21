@@ -5,6 +5,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.TestScope
+import com.example.papereyes.util.concurrency.RequestGate
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -15,6 +17,15 @@ import retrofit2.HttpException
 import retrofit2.Response
 
 class PaperRepositoryNetworkTest {
+    // Isolated gates retain pacing/cooldown behavior without order-dependent
+    // shared state. Both gate clock and delay now use the same test scheduler.
+    private fun TestScope.repository(api: CrossrefApi): PaperRepository = PaperRepository(
+        api, ScholarlyRequestPolicy { provider ->
+            RequestGate(if (provider == ScholarlyProvider.ARXIV) 3000 else 1050,
+                clockMillis = { testScheduler.currentTime })
+        }
+    )
+
 
     @Test
     fun transientIOExceptionIsRetriedOnce() = runTest {
@@ -32,7 +43,7 @@ class PaperRepositoryNetworkTest {
                 error("not used")
         }
 
-        PaperRepository(api).searchPaper("test")
+        repository(api).searchPaper("test")
         assertEquals(2, attempts)
     }
 
@@ -51,7 +62,7 @@ class PaperRepositoryNetworkTest {
                 error("not used")
         }
 
-        val failure = runCatching { PaperRepository(api).searchPaper("test") }.exceptionOrNull()
+        val failure = runCatching { repository(api).searchPaper("test") }.exceptionOrNull()
         assertTrue(failure is HttpException)
         assertEquals(1, attempts)
     }
@@ -72,7 +83,7 @@ class PaperRepositoryNetworkTest {
                 error("not used")
         }
 
-        PaperRepository(api).searchPaper("test")
+        repository(api).searchPaper("test")
         assertEquals(2, attempts)
     }
 
@@ -88,7 +99,7 @@ class PaperRepositoryNetworkTest {
                 CrossrefSingleResponse(message = null)
         }
 
-        assertTrue(PaperRepository(api).searchPaper("test").isEmpty())
+        assertTrue(repository(api).searchPaper("test").isEmpty())
     }
 
     @Test
@@ -105,11 +116,8 @@ class PaperRepositoryNetworkTest {
             }
         }
 
-        // Use the single-work endpoint here intentionally. List/search requests are
-        // process-wide rate limited, which would make this cancellation test depend
-        // on wall-clock state left by earlier tests. Both paths share the same retry
-        // wrapper, so this isolates the cancellation behavior we actually care about.
-        val job = async { PaperRepository(api).getPaperByDoi("10.1000/test") }
+        // A fresh policy makes this cancellation test independent of earlier calls.
+        val job = async { repository(api).getPaperByDoi("10.1000/test") }
         testScheduler.runCurrent()
         assertEquals(1, attempts)
 

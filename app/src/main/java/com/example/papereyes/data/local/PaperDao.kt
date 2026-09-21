@@ -37,14 +37,18 @@ abstract class PaperDao {
     @Query("SELECT * FROM papers WHERE identityKey = :identityKey LIMIT 1")
     abstract suspend fun findByIdentityKey(identityKey: String): Paper?
 
-    @Query(
-        """
-        SELECT * FROM papers
-        WHERE LOWER(TRIM(title)) = LOWER(TRIM(:title))
-        ORDER BY savedAt DESC
-        """
-    )
-    abstract suspend fun findAllByTitle(title: String): List<Paper>
+    @Query("SELECT * FROM papers ORDER BY savedAt DESC")
+    protected abstract suspend fun loadIdentityCandidates(): List<Paper>
+
+    /** SQLite LOWER is ASCII-oriented and TRIM does not collapse inner whitespace.
+     * Use the same canonical function as identityKey on this rare upgrade path.
+     * Exact identity remains indexed; this fallback is one bounded-by-library query,
+     * not N+1 queries. Add an indexed normalized-title column when scale justifies it.
+     */
+    open suspend fun findAllByTitle(title: String): List<Paper> {
+        val normalized = normalizePaperTitle(title)
+        return loadIdentityCandidates().filter { normalizePaperTitle(it.title) == normalized }
+    }
 
     @Query("SELECT * FROM papers WHERE id = :paperId LIMIT 1")
     abstract suspend fun findById(paperId: Int): Paper?

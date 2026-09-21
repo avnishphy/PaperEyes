@@ -1,0 +1,6 @@
+
+# OpenAlex reflection DTOs.
+-keep class com.example.papereyes.data.remote.OpenAlexResponse { *; }
+-keep class com.example.papereyes.data.remote.OpenAlexWork { *; }
+-keep class com.example.papereyes.data.remote.OpenAlexAuthorship { *; }
+-keep class com.example.papereyes.data.remote.OpenAlexAuthor { *; }

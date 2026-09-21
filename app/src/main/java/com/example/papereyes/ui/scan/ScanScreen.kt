@@ -32,12 +32,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.local.LibraryRepository
 import com.example.papereyes.data.model.Paper
+import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.PaperInputType
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.toUserFacingMessage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 @Composable
@@ -80,6 +83,8 @@ fun ScanScreen(
         mutableStateOf<String?>(null)
     }
 
+
+    var resolutionStatus by remember { mutableStateOf(ResolutionStatus.NOT_FOUND) }
 
     var detectedType by remember {
         mutableStateOf<PaperInputType?>(null)
@@ -174,6 +179,7 @@ fun ScanScreen(
                 result.inputType
 
 
+            resolutionStatus = result.status
             results =
                 result.papers
 
@@ -257,14 +263,19 @@ fun ScanScreen(
                      * ------------------------------------------------
                      */
                     val ocrResult =
-                        textRecognizer
-                            .recognizeImage(
-                                context =
-                                    context,
+                        withContext(
+                            Dispatchers.IO
+                        ) {
 
-                                uri =
-                                    uri
-                            )
+                            textRecognizer
+                                .recognizeImage(
+                                    context =
+                                        context,
+
+                                    uri =
+                                        uri
+                                )
+                        }
 
 
                     rawOcrText =
@@ -282,11 +293,12 @@ fun ScanScreen(
 
 
                     if (
-                        bestQuery.isBlank()
+                        bestQuery.isBlank() && ocrResult.evidence.fingerprints.isEmpty()
                     ) {
 
                         errorMessage =
-                            "No readable text found in image."
+                            if (ocrResult.rawText.isBlank()) "No readable text found in image."
+                            else "Text was read, but no reliable paper identity was found. Try the title or journal header."
 
                         return@launch
                     }
@@ -298,15 +310,14 @@ fun ScanScreen(
                      * ------------------------------------------------
                      */
                     val result =
-                        resolver.resolve(
-                            bestQuery
-                        )
+                        resolver.resolveEvidence(ocrResult.evidence)
 
 
                     detectedType =
                         result.inputType
 
 
+                    resolutionStatus = result.status
                     results =
                         result.papers
 
@@ -316,7 +327,9 @@ fun ScanScreen(
                     ) {
 
                         errorMessage =
-                            "No matching papers found."
+                            if (result.status == ResolutionStatus.PROVIDERS_UNAVAILABLE)
+                                "Scholarly services are unavailable or rate-limited. Try again later."
+                            else "Could not identify confidently. Try the title or journal header."
                     }
 
                 } catch (
@@ -329,11 +342,16 @@ fun ScanScreen(
                     exception: Exception
                 ) {
 
+                    android.util.Log.e(
+                        "PaperEyesImport",
+                        "Import failed",
+                        exception
+                    )
+
                     errorMessage =
                         exception.toUserFacingMessage(
                             "Could not read image."
                         )
-
                 } finally {
 
                     loading =
@@ -534,6 +552,11 @@ fun ScanScreen(
          * INPUT TYPE
          * ============================================================
          */
+        item {
+            Text("Images are processed on-device. Selected identifiers, titles, or short phrases are sent to scholarly services for lookup.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+
         detectedType
             ?.let { type ->
 
@@ -552,7 +575,10 @@ fun ScanScreen(
                                 "Journal citation detected"
 
                             PaperInputType.TITLE_OR_OCR ->
-                                "Paper title detected"
+                                "Title search"
+
+                            PaperInputType.INTERIOR_TEXT ->
+                                "Interior-page phrase search — experimental"
                         }
 
 
@@ -622,7 +648,8 @@ fun ScanScreen(
                             results.size == 1
                         ) {
 
-                            "Paper found"
+                            if (resolutionStatus == ResolutionStatus.VERIFIED) "Paper identified"
+                            else "Possible match — confirm before saving"
 
                         } else {
 
