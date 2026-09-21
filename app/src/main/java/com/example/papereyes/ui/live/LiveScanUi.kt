@@ -582,6 +582,12 @@ private fun LiveScanStatusPill(
     val shortStatus =
         when {
 
+            scanningLocked && statusMessage.contains("reference", ignoreCase = true) ->
+
+                if (statusMessage.contains("choose", ignoreCase = true)) "References found"
+                else "Reference search complete"
+
+
             scanningLocked ->
 
                 "Paper identified"
