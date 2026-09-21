@@ -29,6 +29,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -599,6 +601,14 @@ fun LiveScanScreen(
         }
     }
 
+    LaunchedEffect(scanningLocked) {
+        if (scanningLocked) {
+            imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
+            cameraControlRef.set(null)
+            cameraProviderRef.get()?.unbindAll()
+        }
+    }
+
     suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
         resolving = true
         errorMessage = null
@@ -721,6 +731,7 @@ fun LiveScanScreen(
          * CAMERA PREVIEW
          * ------------------------------------------------------------
          */
+        if (!scanningLocked) {
         AndroidView(
             modifier =
                 Modifier.fillMaxSize(),
@@ -1073,6 +1084,7 @@ fun LiveScanScreen(
                                                         return@launch
                                                     }
                                                     if (references.size == 1) {
+                                                        scanningLocked = true
                                                         resolveReferences(references)
                                                         return@launch
                                                     }
@@ -1290,18 +1302,6 @@ fun LiveScanScreen(
             referenceTotal =
                 referenceProgress?.total ?: 0,
 
-            zoomRatio =
-                zoomRatio,
-
-            minimumZoomRatio =
-                minimumZoomRatio,
-
-            maximumZoomRatio =
-                maximumZoomRatio,
-
-            onZoomChange =
-                ::applyZoom,
-
             showDebug =
                 BuildConfig.DEBUG && showDebug,
 
@@ -1370,6 +1370,13 @@ fun LiveScanScreen(
                     "Point PaperEyes toward the paper title"
             }
         )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
+        }
     }
 
     if (pendingReferences.isNotEmpty()) {

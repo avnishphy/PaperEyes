@@ -103,7 +103,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 2. **Evidence integration (complete):** detected references now travel on `DocumentEvidence` without participating in `bestQuery`; focused tests preserve title-page and reference-suppression behavior.
 3. **Batch domain model (complete):** selected references resolve in reading order with bounded candidates, a progress event per item, cancellation propagation, and explicit identified/ambiguous/not-found/unavailable/error outcomes.
 4. **Selection/results UI (complete in source):** the reusable Compose all/subset dialog and per-reference progress/failure summary now drive both Import and Live Scan. Successful Import papers use the existing detail/save cards; identified Live items can be opened from the scrollable summary; failures stay named and visible.
-5. **Camera zoom (complete in source):** the bound CameraX camera supplies min/max zoom and `CameraControl`; visible −/slider/+/ratio controls and pinch gestures share one clamped zoom state. Three pure tests cover limits, scaling, and invalid values.
+5. **Camera zoom (revised after device test):** zoom is pinch-only. The explicit slider/buttons/ratio panel and aiming-frame corners are no longer rendered. Pinch still uses camera-reported limits through the bound `CameraControl`.
 6. **Verification:** unit suite, debug build/lint, Android Studio UI inspection, and real-device cases matching the supplied examples. Record timing and misses here.
 
 ## Acceptance checks for the new work
@@ -132,6 +132,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21 device feedback: reference parsing is fast and accurate, but many lookups remain ambiguous; ambiguous candidates were not exposed; the explicit zoom panel and scan corners should be removed; the camera continued behind results; batch results need Save all and state preservation through paper detail; the DropConnect slide citation remained ambiguous.
 - 2026-09-21 device feedback: Import of “Shedding light on shadow generalized parton distributions” selected a bleed-through/noisy Physical Review header instead of the clean title/DOI. The OCR evidence rule now rejects noisy journal headers as titles and accepts a unique standalone DOI from anywhere before a references section. Focused regressions pass.
 - 2026-09-21: title/OCR resolution now consults bounded OpenAlex metadata when Crossref has no exact title. This specifically covers conference papers such as “Regularization of Neural Networks using DropConnect,” whose authoritative PMLR record may not resolve cleanly through Crossref. Focused provider/resolver/batch tests pass.
+- 2026-09-21: Live Scan now removes the explicit zoom panel and frame corners. When scan/reference results lock the session, analysis is cleared, CameraX is unbound, and the preview is replaced by a black result background until Scan again (or selection cancellation) recreates the camera session.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action

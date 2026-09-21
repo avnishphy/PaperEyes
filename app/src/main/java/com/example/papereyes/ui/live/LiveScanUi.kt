@@ -70,10 +70,6 @@ fun LiveScanOverlay(
     referenceOutcomes: List<ReferenceResolution>,
     referenceCompleted: Int,
     referenceTotal: Int,
-    zoomRatio: Float,
-    minimumZoomRatio: Float,
-    maximumZoomRatio: Float,
-    onZoomChange: (Float) -> Unit,
     showDebug: Boolean,
     debugAvailable: Boolean,
     onBack: () -> Unit,
@@ -88,32 +84,6 @@ fun LiveScanOverlay(
                 .fillMaxSize()
                 .zIndex(100f)
     ) {
-
-        /*
-         * ------------------------------------------------------------
-         * SUBTLE AIMING GUIDE
-         * ------------------------------------------------------------
-         */
-        LiveScanGuide(
-            locked =
-                scanningLocked,
-
-            modifier =
-                Modifier
-                    .align(
-                        Alignment.Center
-                    )
-                    .fillMaxWidth(
-                        0.90f
-                    )
-                    .height(
-                        250.dp
-                    )
-                    .zIndex(
-                        1f
-                    )
-        )
-
 
         /*
          * ------------------------------------------------------------
@@ -182,21 +152,6 @@ fun LiveScanOverlay(
                         20f
                     )
         )
-
-        if (maximumZoomRatio > minimumZoomRatio + 0.01f) {
-            LiveScanZoomControl(
-                zoomRatio = zoomRatio,
-                minimumZoomRatio = minimumZoomRatio,
-                maximumZoomRatio = maximumZoomRatio,
-                onZoomChange = onZoomChange,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 18.dp, end = 18.dp, top = 122.dp)
-                    .zIndex(20f)
-            )
-        }
 
 
         /*
