@@ -139,6 +139,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: final verification after device-feedback fixes passed: 125 JVM tests, 0 failures/errors/skips; `assembleDebug` succeeded; `lintDebug` has 17 warnings and no errors (dependency/version notices plus the pre-existing `UseKtx` warning).
 - 2026-09-21: replaced the default launcher artwork with the user-selected paper-stack image and added legacy, adaptive, round, and monochrome launcher variants.
 - 2026-09-21: launcher resource verification passed: `assembleDebug` and `lintDebug` succeeded; lint reports 0 errors and 23 warnings.
+- 2026-09-21 device feedback: the initial adaptive launcher artwork appeared oversized. The stack was reframed with additional wood margin, while legacy density icons use a calibrated center crop so their apparent size remains consistent with the adaptive icon.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
