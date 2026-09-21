@@ -41,12 +41,15 @@ import com.example.papereyes.domain.evidence.referencesFor
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
 import com.example.papereyes.domain.reference.ReferenceBatchResolver
 import com.example.papereyes.domain.reference.ReferenceResolution
+import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.ReferenceBatchSummary
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.ScanSubjectDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
+import com.example.papereyes.util.network.NetworkAvailability
+import com.example.papereyes.util.network.OFFLINE_MESSAGE
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -193,6 +196,11 @@ fun ScanScreen(
             return
         }
 
+        if (!NetworkAvailability.hasValidatedInternet(context)) {
+            errorMessage = OFFLINE_MESSAGE
+            return
+        }
+
 
         loading =
             true
@@ -263,6 +271,11 @@ fun ScanScreen(
     }
 
     suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
+        if (!NetworkAvailability.hasValidatedInternet(context)) {
+            errorMessage = OFFLINE_MESSAGE
+            return
+        }
+
         loading = true
         errorMessage = null
         results = emptyList()
@@ -279,6 +292,9 @@ fun ScanScreen(
             }
             referenceOutcomes = outcomes
             results = outcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+            if (outcomes.any { it.status == ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE }) {
+                errorMessage = "Internet connection or scholarly services became unavailable. Reconnect, then try again."
+            }
             if (results.size > 1) savePromptPapers = results
         } catch (exception: CancellationException) {
             throw exception
@@ -397,6 +413,11 @@ fun ScanScreen(
                             if (ocrResult.rawText.isBlank()) "No readable text found in image."
                             else "Text was read, but no reliable paper identity was found. Try the title or journal header."
 
+                        return@launch
+                    }
+
+                    if (!NetworkAvailability.hasValidatedInternet(context)) {
+                        errorMessage = OFFLINE_MESSAGE
                         return@launch
                     }
 

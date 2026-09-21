@@ -51,6 +51,7 @@ import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.data.local.LibraryRepository
 import com.example.papereyes.domain.PaperResolver
+import com.example.papereyes.domain.isConnectivityFailure
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.domain.evidence.ScanSubject
 import com.example.papereyes.domain.evidence.hasRequestedEvidence
@@ -63,6 +64,8 @@ import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
+import com.example.papereyes.util.network.NetworkAvailability
+import com.example.papereyes.util.network.OFFLINE_MESSAGE
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
@@ -641,6 +644,13 @@ fun LiveScanScreen(
     }
 
     suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
+        if (!NetworkAvailability.hasValidatedInternet(context)) {
+            errorMessage = OFFLINE_MESSAGE
+            statusMessage = "No internet connection — tap Try again"
+            scanningLocked = true
+            return
+        }
+
         resolving = true
         errorMessage = null
         papers = emptyList()
@@ -660,7 +670,14 @@ fun LiveScanScreen(
             if (papers.size > 1) savePromptPapers = papers
             scanningLocked = true
             val failures = outcomes.count { it.status != ReferenceResolutionStatus.IDENTIFIED }
+            val servicesUnavailable = outcomes.any {
+                it.status == ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE
+            }
+            if (servicesUnavailable) {
+                errorMessage = "Internet connection or scholarly services became unavailable. Reconnect, then try again."
+            }
             statusMessage = when {
+                servicesUnavailable -> "Connection interrupted — tap Try again"
                 failures == 0 -> "All selected references identified"
                 papers.isNotEmpty() -> "Reference search complete — $failures not identified"
                 else -> "Selected references could not be identified"
@@ -1131,6 +1148,13 @@ fun LiveScanScreen(
                                                     resolving =
                                                         true
 
+                                                    if (!NetworkAvailability.hasValidatedInternet(context)) {
+                                                        errorMessage = OFFLINE_MESSAGE
+                                                        statusMessage = "No internet connection — tap Try again"
+                                                        scanningLocked = true
+                                                        return@launch
+                                                    }
+
                                                     statusMessage =
                                                         "Checking scholarly sources…"
 
@@ -1151,7 +1175,12 @@ fun LiveScanScreen(
                                                                     "Paper lookup failed. Check your connection and try again."
                                                                 )
                                                             statusMessage =
-                                                                "Lookup failed — trying again"
+                                                                if (exception.isConnectivityFailure()) {
+                                                                    "Connection interrupted — tap Try again"
+                                                                } else {
+                                                                    "Lookup unavailable — tap Try again"
+                                                                }
+                                                            scanningLocked = true
                                                             null
                                                         }
 

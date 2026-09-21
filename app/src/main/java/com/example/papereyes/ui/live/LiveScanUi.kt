@@ -247,8 +247,16 @@ fun LiveScanOverlay(
                 )
 
             } else {
-
-                LiveScanHint()
+                if (scanningLocked) {
+                    OutlinedButton(
+                        onClick = onScanAgain,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Try again")
+                    }
+                } else {
+                    LiveScanHint()
+                }
             }
         }
     }
