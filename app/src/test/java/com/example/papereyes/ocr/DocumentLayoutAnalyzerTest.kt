@@ -76,4 +76,19 @@ class DocumentLayoutAnalyzerTest {
         assertTrue(e.dois.isEmpty())
         assertEquals("Deep Inelastic Scattering from Nuclei", e.bestQuery)
     }
+
+    @Test fun noisyJournalHeaderIsNotTheTitleAndFooterDoiWins() {
+        val evidence = analyze(
+            line("E0,801 g VaA 2YPHYSICAL REVIEW D 108, 036027 (2023)", 30f, 17f),
+            line("Shedding light on shadow generalized parton distributions", 180f, 34f),
+            line("Moffat, Freese, Cloet, Donohoe, Gamberg, Melnitchouk", 240f, 16f),
+            line("The feasibility of extracting generalized parton distributions from data has recently been questioned.", 420f, 16f),
+            line("DOI: 10.1103/PhysRevD.108.036027", 850f, 15f)
+        )
+
+        assertEquals(listOf("10.1103/physrevd.108.036027"), evidence.dois)
+        assertEquals("10.1103/physrevd.108.036027", evidence.bestQuery)
+        assertTrue(evidence.titles.any { it.text == "Shedding light on shadow generalized parton distributions" })
+        assertFalse(evidence.titles.any { it.text.contains("PHYSICAL REVIEW") })
+    }
 }

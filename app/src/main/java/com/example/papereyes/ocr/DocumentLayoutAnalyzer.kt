@@ -21,6 +21,9 @@ object DocumentLayoutAnalyzer {
     private val caption = Regex("(?i)^(?:fig(?:ure)?\\.?|table)\\s*\\d+")
     private val metadata = Regex("(?i)(?:\\barxiv\\s*:|\\bdoi\\s*:|https?://|www\\.|copyright|all rights reserved|received:|accepted:|published:|keywords:|corresponding author|email:|university|department of|institute of)")
     private val conference = Regex("(?i)^(?:.*\\bconference\\b|proceedings of|.*\\bworkshop\\b|symposium on)")
+    private val publicationHeader = Regex(
+        "(?i)\\b(?:physical review|phys\\.?\\s*rev\\.?|journal|proceedings)\\b.*\\b(?:18|19|20)\\d{2}\\b"
+    )
     private val proseStart = Regex("(?i)^(?:we |our results |these |this (?:is|shows|paper|work)|the results |in this |it is |as shown |to (?:calculate|obtain|evaluate) )")
 
     fun isReferenceHeading(text: String): Boolean = references.matches(
@@ -34,7 +37,7 @@ object DocumentLayoutAnalyzer {
 
     private fun titleLine(text: String): Boolean {
         if (text.length !in 6..250 || text.count(Char::isLetter) < 5 || words(text) < 2) return false
-        if (metadata.containsMatchIn(text) || conference.containsMatchIn(text)) return false
+        if (metadata.containsMatchIn(text) || conference.containsMatchIn(text) || publicationHeader.containsMatchIn(text)) return false
         if (isReferenceHeading(text) || numberedReference.containsMatchIn(text)) return false
         if (headingPrefix.containsMatchIn(text) || sections.matches(text.trimEnd(':', '.'))) return false
         if (caption.containsMatchIn(text) || isBody(text)) return false
@@ -64,7 +67,7 @@ object DocumentLayoutAnalyzer {
                 titles.isNotEmpty() -> LayoutRole.TITLE_LIKE
                 usable.any(::isBody) -> LayoutRole.BODY
                 else -> LayoutRole.UNKNOWN }
-        ), usable, detectedReferences)
+        ), usable, detectedReferences, usable)
     }
 
     fun analyze(rawText: String, input: List<OcrLine>, imageWidth: Int, imageHeight: Int): DocumentEvidence {
@@ -121,7 +124,8 @@ object DocumentLayoutAnalyzer {
             titles.sortedByDescending { it.score },
             LayoutProfile(role, bodyHeight, true),
             blocks,
-            detectedReferences
+            detectedReferences,
+            eligible.map { it.text }
         )
     }
 
@@ -141,12 +145,21 @@ object DocumentLayoutAnalyzer {
         titles: List<TitleEvidence>,
         profile: LayoutProfile,
         blocks: List<String>,
-        references: List<ReferenceEvidence>
+        references: List<ReferenceEvidence>,
+        identifierLines: List<String>
     ): DocumentEvidence {
         // A DOI in a paragraph or a reference is not the document's own ID.
         val metadataLines = lines.take(12).filter { !isBody(it) && words(it) <= 12 }
-        val doiCandidates = metadataLines.flatMap(ScholarlyIdentifiers::extractAllDois).distinct()
-        val arxivCandidates = metadataLines.flatMap(ScholarlyIdentifiers::extractAllArxivIds).distinct()
+        // A standalone identifier is often printed in a footer below the first
+        // 72% of a title page. It is safe to inspect the full pre-reference page
+        // when the line itself is short and explicitly identifier-shaped.
+        val identifierMetadata = identifierLines.filter {
+            !isBody(it) && words(it) <= 12 && ScholarlyIdentifiers.looksLikeIdentifier(it)
+        }
+        val doiCandidates = (metadataLines + identifierMetadata)
+            .flatMap(ScholarlyIdentifiers::extractAllDois).distinct()
+        val arxivCandidates = (metadataLines + identifierMetadata)
+            .flatMap(ScholarlyIdentifiers::extractAllArxivIds).distinct()
         val journal = metadataLines.mapNotNull { if (it.any(Char::isDigit)) JournalCitationParser.parse(it) else null }
             .distinctBy { it.toBibliographicQuery() }
         // Multiple distinct IDs are ambiguous, not a licence to select the first reference.
