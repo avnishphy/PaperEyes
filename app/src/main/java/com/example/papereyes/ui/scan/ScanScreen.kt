@@ -36,6 +36,8 @@ import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.PaperInputType
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.domain.evidence.ReferenceEvidence
+import com.example.papereyes.domain.evidence.ScanSubject
+import com.example.papereyes.domain.evidence.referencesFor
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
 import com.example.papereyes.domain.reference.ReferenceBatchResolver
 import com.example.papereyes.domain.reference.ReferenceResolution
@@ -43,18 +45,23 @@ import com.example.papereyes.ocr.TextRecognizerService
 import com.example.papereyes.ui.common.ReferenceBatchSummary
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
+import com.example.papereyes.ui.common.ScanSubjectDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private enum class PendingScanAction {
+    LIVE_SCAN,
+    IMPORT_IMAGE
+}
 
 @Composable
 fun ScanScreen(
     libraryRepository: LibraryRepository,
     onPaperClick: (Paper) -> Unit,
-    onLiveScanClick: () -> Unit,
+    onLiveScanClick: (ScanSubject) -> Unit,
     onLibraryClick: () -> Unit = {}
 ) {
 
@@ -111,6 +118,14 @@ fun ScanScreen(
 
     var savePromptPapers by remember {
         mutableStateOf<List<Paper>>(emptyList())
+    }
+
+    var pendingScanAction by remember {
+        mutableStateOf<PendingScanAction?>(null)
+    }
+
+    var importScanSubject by remember {
+        mutableStateOf(ScanSubject.JOURNAL_PAPER)
     }
 
 
@@ -354,13 +369,22 @@ fun ScanScreen(
                     inputText =
                         bestQuery
 
-                    val references = ocrResult.evidence.references
+                    val references = ocrResult.evidence.referencesFor(importScanSubject)
                     if (references.size > 1) {
                         pendingReferences = references
                         return@launch
                     }
                     if (references.size == 1) {
                         resolveReferences(references)
+                        return@launch
+                    }
+
+                    if (importScanSubject.isReferenceFocused) {
+                        errorMessage = if (ocrResult.rawText.isBlank()) {
+                            "No readable text found in image."
+                        } else {
+                            "No citations were detected. Try a tighter crop around the references."
+                        }
                         return@launch
                     }
 
@@ -541,8 +565,9 @@ fun ScanScreen(
                  * LIVE SCAN
                  * ----------------------------------------------------
                  */
-                onLiveScan =
-                    onLiveScanClick,
+                onLiveScan = {
+                    if (!loading) pendingScanAction = PendingScanAction.LIVE_SCAN
+                },
 
                 /*
                  * ----------------------------------------------------
@@ -552,14 +577,7 @@ fun ScanScreen(
                 onImportImage = {
 
                     if (!loading) {
-
-                        imagePicker.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts
-                                    .PickVisualMedia
-                                    .ImageOnly
-                            )
-                        )
+                        pendingScanAction = PendingScanAction.IMPORT_IMAGE
                     }
                 },
 
@@ -849,6 +867,26 @@ fun ScanScreen(
                         else "Papers were already saved or could not be saved",
                         Toast.LENGTH_SHORT
                     ).show()
+                }
+            }
+        )
+    }
+
+    pendingScanAction?.let { action ->
+        ScanSubjectDialog(
+            onDismiss = { pendingScanAction = null },
+            onSelect = { subject ->
+                pendingScanAction = null
+                when (action) {
+                    PendingScanAction.LIVE_SCAN -> onLiveScanClick(subject)
+                    PendingScanAction.IMPORT_IMAGE -> {
+                        importScanSubject = subject
+                        imagePicker.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }
                 }
             }
         )

@@ -19,6 +19,7 @@ import com.example.papereyes.data.local.LibraryRepository
 import com.example.papereyes.data.local.PaperDatabase
 import com.example.papereyes.data.local.ProjectEntity
 import com.example.papereyes.data.model.Paper
+import com.example.papereyes.domain.evidence.ScanSubject
 import com.example.papereyes.ui.detail.PaperDetailScreen
 import com.example.papereyes.ui.library.LibraryScreen
 import com.example.papereyes.ui.library.ProjectScreen
@@ -128,6 +129,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(
                         false
                     )
+                }
+
+                var liveScanSubjectName by rememberSaveable {
+                    mutableStateOf(ScanSubject.JOURNAL_PAPER.name)
                 }
 
 
@@ -325,7 +330,7 @@ class MainActivity : ComponentActivity() {
                                             paper
                                     },
 
-                                    onLiveScanClick = {
+                                    onLiveScanClick = { subject ->
 
                                         /*
                                          * Live Scan is not associated
@@ -333,6 +338,10 @@ class MainActivity : ComponentActivity() {
                                          */
                                         selectedProject =
                                             null
+
+
+                                        liveScanSubjectName =
+                                            subject.name
 
 
                                         liveScanOpen =
