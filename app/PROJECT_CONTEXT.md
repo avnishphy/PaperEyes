@@ -101,7 +101,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 
 1. **Reference extraction core (complete):** finished the reference model/detector with pure JVM fixtures for numbered, wrapped, DOI/arXiv, slide-footer, false-positive, layout-index, de-duplication, and bounds cases. It remains separate from document identity.
 2. **Evidence integration (complete):** detected references now travel on `DocumentEvidence` without participating in `bestQuery`; focused tests preserve title-page and reference-suppression behavior.
-3. **Batch domain model:** resolve selected references independently with bounded progress and explicit per-reference success/failure/ambiguity.
+3. **Batch domain model (complete):** selected references resolve in reading order with bounded candidates, a progress event per item, cancellation propagation, and explicit identified/ambiguous/not-found/unavailable/error outcomes.
 4. **Selection/results UI:** reusable Compose selection dialog, Import integration, then Live Scan integration. Partial failures remain visible beside successes.
 5. **Camera zoom:** retain CameraX `CameraControl`/`CameraInfo`, add clamped zoom state, visible controls, and pinch handling; add pure zoom-mapping tests where possible.
 6. **Verification:** unit suite, debug build/lint, Android Studio UI inspection, and real-device cases matching the supplied examples. Record timing and misses here.
@@ -124,8 +124,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: real Gradle `testDebugUnitTest` attempted with Android Studio JBR; compilation failed at the pre-existing incomplete untracked `ReferenceDetector.kt` skeleton (four compiler diagnostics). No tests executed.
 - 2026-09-21: reference extraction slice completed. Six focused detector tests pass, followed by the full `testDebugUnitTest` suite.
 - 2026-09-21: evidence integration slice completed. Detector, layout, and candidate-extractor tests pass; references remain parallel to single-paper identity.
+- 2026-09-21: batch resolution slice completed. Five focused tests cover order/progress, partial failures, exact-title selection, ambiguity, cancellation, exceptions, and bounds.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Complete slice 3: add a batch reference-resolution model with explicit per-reference outcomes and progress.
+Complete slice 4a: add a reusable reference selection/results UI and integrate it into image Import before changing Live Scan.
