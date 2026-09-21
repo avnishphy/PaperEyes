@@ -351,7 +351,7 @@ fun ScanScreen(
                         pendingReferences = references
                         return@launch
                     }
-                    if (references.size == 1 && bestQuery.isBlank()) {
+                    if (references.size == 1) {
                         resolveReferences(references)
                         return@launch
                     }

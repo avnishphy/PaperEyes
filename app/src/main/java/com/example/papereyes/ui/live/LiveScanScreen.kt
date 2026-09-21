@@ -43,7 +43,13 @@ import androidx.core.content.ContextCompat
 import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.PaperResolver
+import com.example.papereyes.domain.evidence.ReferenceEvidence
+import com.example.papereyes.domain.reference.ReferenceBatchProgress
+import com.example.papereyes.domain.reference.ReferenceBatchResolver
+import com.example.papereyes.domain.reference.ReferenceResolution
+import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 import com.example.papereyes.ocr.TextRecognizerService
+import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -486,6 +492,18 @@ fun LiveScanScreen(
         )
     }
 
+    var pendingReferences by remember {
+        mutableStateOf<List<ReferenceEvidence>>(emptyList())
+    }
+
+    var referenceOutcomes by remember {
+        mutableStateOf<List<ReferenceResolution>>(emptyList())
+    }
+
+    var referenceProgress by remember {
+        mutableStateOf<ReferenceBatchProgress?>(null)
+    }
+
 
     /*
      * Debug information is useful during scanner development,
@@ -514,6 +532,11 @@ fun LiveScanScreen(
         remember {
 
             TextRecognizerService()
+        }
+
+    val referenceResolver =
+        remember(resolver) {
+            ReferenceBatchResolver(resolver)
         }
 
 
@@ -554,6 +577,37 @@ fun LiveScanScreen(
 
     val imageAnalysisRef = remember {
         AtomicReference<ImageAnalysis?>(null)
+    }
+
+    suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
+        resolving = true
+        errorMessage = null
+        papers = emptyList()
+        referenceOutcomes = emptyList()
+        referenceProgress = null
+        statusMessage = "Searching ${selected.size} ${if (selected.size == 1) "reference" else "references"}…"
+
+        try {
+            val outcomes = referenceResolver.resolveAll(selected) { progress ->
+                referenceProgress = progress
+                referenceOutcomes = referenceOutcomes + progress.latest
+                papers = referenceOutcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+                statusMessage = "Searching references ${progress.completed}/${progress.total}…"
+            }
+            referenceOutcomes = outcomes
+            papers = outcomes.mapNotNull { it.paper }.distinctBy { it.identityKey }
+            scanningLocked = true
+            val failures = outcomes.count { it.status != ReferenceResolutionStatus.IDENTIFIED }
+            statusMessage = when {
+                failures == 0 -> "All selected references identified"
+                papers.isNotEmpty() -> "Reference search complete — $failures not identified"
+                else -> "Selected references could not be identified"
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } finally {
+            resolving = false
+        }
     }
 
 
@@ -966,6 +1020,18 @@ fun LiveScanScreen(
                                                     highResCandidate =
                                                         candidate
 
+                                                    val references = ocrResult.evidence.references
+                                                    if (references.size > 1) {
+                                                        pendingReferences = references
+                                                        scanningLocked = true
+                                                        statusMessage = "${references.size} references found — choose which to search"
+                                                        return@launch
+                                                    }
+                                                    if (references.size == 1) {
+                                                        resolveReferences(references)
+                                                        return@launch
+                                                    }
+
                                                     if (!isGoodCandidate(candidate) && ocrResult.evidence.fingerprints.isEmpty()) {
                                                         statusMessage =
                                                             "Couldn't read enough of the title"
@@ -1163,6 +1229,15 @@ fun LiveScanScreen(
             paper =
                 papers.firstOrNull(),
 
+            referenceOutcomes =
+                referenceOutcomes,
+
+            referenceCompleted =
+                referenceProgress?.completed ?: 0,
+
+            referenceTotal =
+                referenceProgress?.total ?: 0,
+
             showDebug =
                 BuildConfig.DEBUG && showDebug,
 
@@ -1215,8 +1290,35 @@ fun LiveScanScreen(
                     false
 
 
+                pendingReferences =
+                    emptyList()
+
+
+                referenceOutcomes =
+                    emptyList()
+
+
+                referenceProgress =
+                    null
+
+
                 statusMessage =
                     "Point PaperEyes toward the paper title"
+            }
+        )
+    }
+
+    if (pendingReferences.isNotEmpty()) {
+        ReferenceSelectionDialog(
+            references = pendingReferences,
+            onDismiss = {
+                pendingReferences = emptyList()
+                scanningLocked = false
+                statusMessage = "Point PaperEyes toward the paper title"
+            },
+            onSearch = { selected ->
+                pendingReferences = emptyList()
+                coroutineScope.launch { resolveReferences(selected) }
             }
         )
     }

@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.example.papereyes.data.model.Paper
+import com.example.papereyes.domain.reference.ReferenceResolution
+import com.example.papereyes.ui.common.ReferenceBatchSummary
 
 
 /*
@@ -64,6 +66,9 @@ fun LiveScanOverlay(
     scanningLocked: Boolean,
     errorMessage: String?,
     paper: Paper?,
+    referenceOutcomes: List<ReferenceResolution>,
+    referenceCompleted: Int,
+    referenceTotal: Int,
     showDebug: Boolean,
     debugAvailable: Boolean,
     onBack: () -> Unit,
@@ -232,7 +237,24 @@ fun LiveScanOverlay(
             }
 
 
-            if (paper != null) {
+            if (referenceTotal > 0) {
+
+                ReferenceBatchSummary(
+                    outcomes = referenceOutcomes,
+                    completed = referenceCompleted,
+                    total = referenceTotal,
+                    scrollable = true,
+                    onPaperClick = onOpenPaper
+                )
+
+                OutlinedButton(
+                    onClick = onScanAgain,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Scan again")
+                }
+
+            } else if (paper != null) {
 
                 LiveScanResultCard(
                     paper =

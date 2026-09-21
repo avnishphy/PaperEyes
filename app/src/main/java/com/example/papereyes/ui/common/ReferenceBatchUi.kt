@@ -1,6 +1,8 @@
 package com.example.papereyes.ui.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.papereyes.domain.evidence.ReferenceEvidence
+import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 
@@ -121,14 +124,27 @@ fun ReferenceSelectionDialog(
 fun ReferenceBatchSummary(
     outcomes: List<ReferenceResolution>,
     completed: Int,
-    total: Int
+    total: Int,
+    modifier: Modifier = Modifier,
+    scrollable: Boolean = false,
+    onPaperClick: ((Paper) -> Unit)? = null
 ) {
     if (total == 0) return
 
     val failures = outcomes.filter { it.status != ReferenceResolutionStatus.IDENTIFIED }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .then(
+                    if (scrollable) {
+                        Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
@@ -158,7 +174,15 @@ fun ReferenceBatchSummary(
                     ReferenceResolutionStatus.PROVIDERS_UNAVAILABLE -> "Not identified — services unavailable"
                     ReferenceResolutionStatus.ERROR -> "Not identified — lookup failed"
                 }
-                Column {
+                Column(
+                    modifier = Modifier.then(
+                        if (outcome.paper != null && onPaperClick != null) {
+                            Modifier.clickable { onPaperClick(outcome.paper) }
+                        } else {
+                            Modifier
+                        }
+                    )
+                ) {
                     Text(
                         prefix + outcome.reference.text,
                         maxLines = 2,
@@ -174,6 +198,9 @@ fun ReferenceBatchSummary(
                         },
                         style = MaterialTheme.typography.labelMedium
                     )
+                    if (outcome.paper != null && onPaperClick != null) {
+                        Text("Tap to open", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
