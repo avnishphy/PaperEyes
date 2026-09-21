@@ -100,7 +100,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 ## Planned small implementation slices
 
 1. **Reference extraction core (complete):** finished the reference model/detector with pure JVM fixtures for numbered, wrapped, DOI/arXiv, slide-footer, false-positive, layout-index, de-duplication, and bounds cases. It remains separate from document identity.
-2. **Evidence integration:** attach detected references to OCR evidence without changing `bestQuery`; test that single-paper scans retain current behavior.
+2. **Evidence integration (complete):** detected references now travel on `DocumentEvidence` without participating in `bestQuery`; focused tests preserve title-page and reference-suppression behavior.
 3. **Batch domain model:** resolve selected references independently with bounded progress and explicit per-reference success/failure/ambiguity.
 4. **Selection/results UI:** reusable Compose selection dialog, Import integration, then Live Scan integration. Partial failures remain visible beside successes.
 5. **Camera zoom:** retain CameraX `CameraControl`/`CameraInfo`, add clamped zoom state, visible controls, and pinch handling; add pure zoom-mapping tests where possible.
@@ -123,8 +123,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: existing repository `HANDOFF.md`, architecture/audit docs, build configuration, manifest, schemas, production package layout, and test inventory reviewed.
 - 2026-09-21: real Gradle `testDebugUnitTest` attempted with Android Studio JBR; compilation failed at the pre-existing incomplete untracked `ReferenceDetector.kt` skeleton (four compiler diagnostics). No tests executed.
 - 2026-09-21: reference extraction slice completed. Six focused detector tests pass, followed by the full `testDebugUnitTest` suite.
+- 2026-09-21: evidence integration slice completed. Detector, layout, and candidate-extractor tests pass; references remain parallel to single-paper identity.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Complete slice 2: add detected references to `DocumentEvidence` while preserving all single-paper `bestQuery` and safety behavior.
+Complete slice 3: add a batch reference-resolution model with explicit per-reference outcomes and progress.

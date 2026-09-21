@@ -23,7 +23,9 @@ data class DocumentEvidence(
     val journalCitations: List<JournalCitation> = emptyList(),
     val titles: List<TitleEvidence> = emptyList(),
     val fingerprints: List<TextFingerprint> = emptyList(),
-    val layout: LayoutProfile = LayoutProfile()
+    val layout: LayoutProfile = LayoutProfile(),
+    /** Cited works are parallel evidence and never participate in [bestQuery]. */
+    val references: List<ReferenceEvidence> = emptyList()
 ) {
     val bestQuery: String get() = when {
         dois.size == 1 -> dois.single()

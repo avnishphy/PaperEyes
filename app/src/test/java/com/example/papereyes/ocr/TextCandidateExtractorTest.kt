@@ -25,12 +25,15 @@ class TextCandidateExtractorTest {
 
     @Test
     fun referencesHeadingSuppressesFollowingIdentifiers() {
-        assertEquals(
-            "",
-            TextCandidateExtractor.extractBestQuery(
-                "References and Notes\n[1] Example Author DOI: 10.1000/reference\n[2] Another reference"
-            )
+        val evidence = DocumentLayoutAnalyzer.fromText(
+            "References and Notes\n" +
+                "[1] Example Author DOI: 10.1000/reference\n" +
+                "[2] Another Author DOI: 10.1000/second"
         )
+
+        assertEquals("", evidence.bestQuery)
+        assertEquals(2, evidence.references.size)
+        assertEquals("10.1000/reference", evidence.references.first().query)
     }
 
     @Test
@@ -39,6 +42,21 @@ class TextCandidateExtractorTest {
             "",
             TextCandidateExtractor.extractBestQuery("[1] Example Author DOI: 10.1000/reference")
         )
+    }
+
+    @Test
+    fun detectedReferencesDoNotOverrideTheScannedPaperTitle() {
+        val evidence = DocumentLayoutAnalyzer.fromText(
+            """
+            Reliable Identification of Scientific Papers
+            References
+            [1] A. Author. First cited work. doi:10.1000/first
+            [2] B. Author. Second cited work. doi:10.1000/second
+            """.trimIndent()
+        )
+
+        assertEquals("Reliable Identification of Scientific Papers", evidence.bestQuery)
+        assertEquals(2, evidence.references.size)
     }
 
     @Test

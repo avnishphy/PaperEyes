@@ -7,6 +7,7 @@ import com.example.papereyes.domain.evidence.FingerprintExtractor
 import com.example.papereyes.domain.evidence.LayoutProfile
 import com.example.papereyes.domain.evidence.LayoutRole
 import com.example.papereyes.domain.evidence.OcrLine
+import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.domain.evidence.TitleEvidence
 import kotlin.math.abs
 
@@ -44,6 +45,7 @@ object DocumentLayoutAnalyzer {
     }
 
     fun fromText(rawText: String): DocumentEvidence {
+        val detectedReferences = ReferenceDetector.fromText(rawText).references
         val lines = rawText.take(100000).lines().map(::clean).filter(String::isNotBlank)
         val boundary = lines.indexOfFirst(::isReferenceHeading)
         val before = if (boundary >= 0) lines.take(boundary) else lines
@@ -62,11 +64,12 @@ object DocumentLayoutAnalyzer {
                 titles.isNotEmpty() -> LayoutRole.TITLE_LIKE
                 usable.any(::isBody) -> LayoutRole.BODY
                 else -> LayoutRole.UNKNOWN }
-        ), usable)
+        ), usable, detectedReferences)
     }
 
     fun analyze(rawText: String, input: List<OcrLine>, imageWidth: Int, imageHeight: Int): DocumentEvidence {
         if (imageWidth <= 0 || imageHeight <= 0) return fromText(rawText)
+        val detectedReferences = ReferenceDetector.fromLayout(input, imageWidth, imageHeight).references
         val all = input.asSequence().filter {
             it.left.isFinite() && it.top.isFinite() && it.right.isFinite() && it.bottom.isFinite() && it.height > 0 && it.width > 0
         }.map { it.copy(text = clean(it.text)) }.filter { it.text.isNotBlank() }.take(600)
@@ -113,7 +116,13 @@ object DocumentLayoutAnalyzer {
         val blocks = eligible.groupBy { it.blockId }.values.map { block ->
             block.sortedBy { it.top }.joinToString(" ") { it.text }
         }
-        return buildEvidence(identityLines, titles.sortedByDescending { it.score }, LayoutProfile(role, bodyHeight, true), blocks)
+        return buildEvidence(
+            identityLines,
+            titles.sortedByDescending { it.score },
+            LayoutProfile(role, bodyHeight, true),
+            blocks,
+            detectedReferences
+        )
     }
 
     private fun joins(first: OcrLine, second: OcrLine, width: Int): Boolean {
@@ -128,7 +137,11 @@ object DocumentLayoutAnalyzer {
     }
 
     private fun buildEvidence(
-        lines: List<String>, titles: List<TitleEvidence>, profile: LayoutProfile, blocks: List<String>
+        lines: List<String>,
+        titles: List<TitleEvidence>,
+        profile: LayoutProfile,
+        blocks: List<String>,
+        references: List<ReferenceEvidence>
     ): DocumentEvidence {
         // A DOI in a paragraph or a reference is not the document's own ID.
         val metadataLines = lines.take(12).filter { !isBody(it) && words(it) <= 12 }
@@ -142,6 +155,6 @@ object DocumentLayoutAnalyzer {
         val arxiv = arxivCandidates.takeIf { !ambiguousIds && it.size == 1 }.orEmpty()
         val fingerprints = if (profile.role == LayoutRole.REFERENCES || dois.isNotEmpty() || arxiv.isNotEmpty() || journal.isNotEmpty() || titles.isNotEmpty()) emptyList()
             else FingerprintExtractor.extract(blocks.filterNot { metadata.containsMatchIn(it) || isReferenceHeading(it) })
-        return DocumentEvidence(dois, arxiv, journal, titles, fingerprints, profile)
+        return DocumentEvidence(dois, arxiv, journal, titles, fingerprints, profile, references)
     }
 }
