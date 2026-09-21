@@ -43,7 +43,7 @@ PaperEyes is a single-activity Jetpack Compose Android app with simple state-bas
 
 Main stack: Kotlin 2.2.10, AGP 9.4.1, compile/target SDK 37, min SDK 24, Compose Material 3, CameraX 1.6.2, on-device ML Kit Latin text recognition 16.0.1, Retrofit/Gson, Room 2.8.5, and coroutines.
 
-The manifest requests only camera and internet permissions, disables cleartext traffic and backup, and uses Android Photo Picker for imports. Room is schema version 4. No destructive migration fallback is present.
+The manifest requests camera, internet, and network-state permissions, disables cleartext traffic and backup, and uses Android Photo Picker for imports. `MainActivity` is `singleTop` so launcher re-entry cannot stack duplicate Compose/OCR owners. Room is schema version 4. No destructive migration fallback is present.
 
 Launcher assets use the user-selected papers-on-wood artwork, with density-specific legacy square/round icons, an adaptive full-color icon, and a paper-stack monochrome icon for themed launchers.
 
@@ -145,8 +145,12 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: added an explicit scan-subject chooser before both Import and Live Scan. Journal-paper, reference-list, and conference-slide choices now constrain which OCR evidence can trigger scholarly lookup; three focused policy regressions and the full JVM suite pass.
 - 2026-09-21 crash investigation: Android's crash buffer and `ApplicationExitInfo` contained no PaperEyes crash or ANR, only explicit force-stops. A clean launch and Live Scan session remained alive on the connected A069P; the crash report still needs a reproduction or PaperEyes stack trace before a root-cause fix can be made safely.
 - 2026-09-21: final scan-subject verification passed: 128 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed successfully.
+- 2026-09-21 live monitoring: cold start was about 1.05 s. Two successful Live Scan traces completed in 2.30 s and 3.26 s. No PaperEyes crash, ANR, or process death was recorded. Repeated launcher entry had stacked three `MainActivity` instances, raising memory to about 261 MB PSS / 414 MB RSS; `singleTop` now reuses the existing activity.
+- 2026-09-21 black-screen root cause fixed: camera locking had incorrectly removed `LiveScanOverlay` together with `PreviewView`. The camera can now stop on a result or lookup failure while status, errors, results, and retry controls remain visible over the black background.
+- 2026-09-21 connectivity guardrails added: lookups require a validated network, Live Scan locks on a visible offline/interrupted state with `Try again`, and a reference batch stops network requests after its first transport failure while preserving an outcome for every selected reference.
+- 2026-09-21: final stability verification passed: 131 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed successfully with 0 errors.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Run final Gradle verification, then repeat the supplied bibliography, DropConnect slide, and “Shedding light…” device cases in Android Studio.
+Install the latest debug build, verify launcher re-entry keeps one activity, toggle connectivity during lookup, then repeat the supplied bibliography, DropConnect slide, and “Shedding light…” device cases in Android Studio.
