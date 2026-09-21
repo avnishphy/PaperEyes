@@ -45,6 +45,8 @@ Main stack: Kotlin 2.2.10, AGP 9.4.1, compile/target SDK 37, min SDK 24, Compose
 
 The manifest requests only camera and internet permissions, disables cleartext traffic and backup, and uses Android Photo Picker for imports. Room is schema version 4. No destructive migration fallback is present.
 
+Launcher assets use the user-selected papers-on-wood artwork, with density-specific legacy square/round icons, an adaptive full-color icon, and a paper-stack monochrome icon for themed launchers.
+
 ## Current identification pipeline
 
 Both Import and Live Scan produce `DocumentEvidence` through `TextRecognizerService` and `TextCandidateExtractor`.
@@ -135,6 +137,8 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: Live Scan now removes the explicit zoom panel and frame corners. When scan/reference results lock the session, analysis is cleared, CameraX is unbound, and the preview is replaced by a black result background until Scan again (or selection cancellation) recreates the camera session.
 - 2026-09-21: ambiguous reference rows now open their bounded candidate list; choosing a candidate opens normal paper detail. MainActivity keeps the underlying Import/Live/Library/Project screen composed beneath paper detail, so Back returns to the same remaining results. When a batch identifies more than one paper, Import and Live Scan ask whether to save all; saving continues across per-paper database failures and reports the saved count.
 - 2026-09-21: final verification after device-feedback fixes passed: 125 JVM tests, 0 failures/errors/skips; `assembleDebug` succeeded; `lintDebug` has 17 warnings and no errors (dependency/version notices plus the pre-existing `UseKtx` warning).
+- 2026-09-21: replaced the default launcher artwork with the user-selected paper-stack image and added legacy, adaptive, round, and monochrome launcher variants.
+- 2026-09-21: launcher resource verification passed: `assembleDebug` and `lintDebug` succeeded; lint reports 0 errors and 23 warnings.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
