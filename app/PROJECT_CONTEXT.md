@@ -103,7 +103,7 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 2. **Evidence integration (complete):** detected references now travel on `DocumentEvidence` without participating in `bestQuery`; focused tests preserve title-page and reference-suppression behavior.
 3. **Batch domain model (complete):** selected references resolve in reading order with bounded candidates, a progress event per item, cancellation propagation, and explicit identified/ambiguous/not-found/unavailable/error outcomes.
 4. **Selection/results UI (complete in source):** the reusable Compose all/subset dialog and per-reference progress/failure summary now drive both Import and Live Scan. Successful Import papers use the existing detail/save cards; identified Live items can be opened from the scrollable summary; failures stay named and visible.
-5. **Camera zoom:** retain CameraX `CameraControl`/`CameraInfo`, add clamped zoom state, visible controls, and pinch handling; add pure zoom-mapping tests where possible.
+5. **Camera zoom (complete in source):** the bound CameraX camera supplies min/max zoom and `CameraControl`; visible −/slider/+/ratio controls and pinch gestures share one clamped zoom state. Three pure tests cover limits, scaling, and invalid values.
 6. **Verification:** unit suite, debug build/lint, Android Studio UI inspection, and real-device cases matching the supplied examples. Record timing and misses here.
 
 ## Acceptance checks for the new work
@@ -127,8 +127,10 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: batch resolution slice completed. Five focused tests cover order/progress, partial failures, exact-title selection, ambiguity, cancellation, exceptions, and bounds.
 - 2026-09-21: Import reference UI slice compiles and the full JVM suite passes. Multiple detected references prompt for all/subset; single reference-only images resolve directly; per-item outcomes are retained.
 - 2026-09-21: Live Scan reference UI slice compiles and the full JVM suite passes. Multiple references lock scanning while the user selects all/subset; cancel safely resumes scanning; single slide/footer references resolve directly; Scan again clears batch state.
+- 2026-09-21: CameraX zoom slice compiles and three focused zoom tests pass. Preview, analysis, and JPEG capture remain bound to the same camera and therefore share its sensor crop. Real-device gesture/framing behavior remains to be verified in Android Studio.
+- 2026-09-21: final Gradle verification passed: 122 JVM tests, 0 failures/errors/skips; `assembleDebug` produced `app-debug.apk`; `lintDebug` completed with dependency/update warnings and the pre-existing `UseKtx` warning, but no lint errors.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Complete slice 5: add CameraX zoom state, visible controls, and pinch-to-zoom without changing capture/OCR resolution policy.
+Run final Gradle verification, then test the supplied bibliography/slide cases and zoom behavior on a real phone in Android Studio.

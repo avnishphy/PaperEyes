@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Size
 import android.util.Log
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import androidx.compose.runtime.withFrameNanos
 import com.example.papereyes.domain.ResolutionStatus
 import com.example.papereyes.domain.telemetry.ScanStage
@@ -17,6 +19,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraControl
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -31,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -504,6 +508,10 @@ fun LiveScanScreen(
         mutableStateOf<ReferenceBatchProgress?>(null)
     }
 
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var minimumZoomRatio by remember { mutableFloatStateOf(1f) }
+    var maximumZoomRatio by remember { mutableFloatStateOf(1f) }
+
 
     /*
      * Debug information is useful during scanner development,
@@ -579,6 +587,18 @@ fun LiveScanScreen(
         AtomicReference<ImageAnalysis?>(null)
     }
 
+    val cameraControlRef = remember {
+        AtomicReference<CameraControl?>(null)
+    }
+
+    fun applyZoom(requested: Float) {
+        val clamped = clampZoomRatio(requested, minimumZoomRatio, maximumZoomRatio)
+        zoomRatio = clamped
+        cameraControlRef.get()?.let { control ->
+            runCatching { control.setZoomRatio(clamped) }
+        }
+    }
+
     suspend fun resolveReferences(selected: List<ReferenceEvidence>) {
         resolving = true
         errorMessage = null
@@ -624,6 +644,7 @@ fun LiveScanScreen(
             // CameraX is bound to the Activity lifecycle, which can outlive this
             // composable. Explicitly detach the analyzer/use cases first.
             imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
+            cameraControlRef.set(null)
             cameraProviderRef.getAndSet(null)?.unbindAll()
 
             liveCompletionGate.close()
@@ -722,6 +743,30 @@ fun LiveScanScreen(
                     PreviewView
                         .ScaleType
                         .FILL_CENTER
+
+                val scaleGestureDetector = ScaleGestureDetector(
+                    previewContext,
+                    object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                        override fun onScale(detector: ScaleGestureDetector): Boolean {
+                            applyZoom(
+                                scaleZoomRatio(
+                                    zoomRatio,
+                                    detector.scaleFactor,
+                                    minimumZoomRatio,
+                                    maximumZoomRatio
+                                )
+                            )
+                            return true
+                        }
+                    }
+                )
+
+                previewView.isClickable = true
+                previewView.setOnTouchListener { view, event ->
+                    scaleGestureDetector.onTouchEvent(event)
+                    if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
+                    true
+                }
 
 
                 val cameraProviderFuture =
@@ -1160,7 +1205,7 @@ fun LiveScanScreen(
                                 .unbindAll()
 
 
-                            cameraProvider
+                            val camera = cameraProvider
                                 .bindToLifecycle(
                                     lifecycleOwner,
 
@@ -1173,6 +1218,13 @@ fun LiveScanScreen(
 
                                     imageCapture
                                 )
+
+                            cameraControlRef.set(camera.cameraControl)
+                            camera.cameraInfo.zoomState.value?.let { state ->
+                                minimumZoomRatio = state.minZoomRatio
+                                maximumZoomRatio = state.maxZoomRatio
+                                applyZoom(zoomRatio)
+                            }
 
                         } catch (
                             exception:
@@ -1237,6 +1289,18 @@ fun LiveScanScreen(
 
             referenceTotal =
                 referenceProgress?.total ?: 0,
+
+            zoomRatio =
+                zoomRatio,
+
+            minimumZoomRatio =
+                minimumZoomRatio,
+
+            maximumZoomRatio =
+                maximumZoomRatio,
+
+            onZoomChange =
+                ::applyZoom,
 
             showDebug =
                 BuildConfig.DEBUG && showDebug,

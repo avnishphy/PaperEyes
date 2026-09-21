@@ -21,6 +21,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +70,10 @@ fun LiveScanOverlay(
     referenceOutcomes: List<ReferenceResolution>,
     referenceCompleted: Int,
     referenceTotal: Int,
+    zoomRatio: Float,
+    minimumZoomRatio: Float,
+    maximumZoomRatio: Float,
+    onZoomChange: (Float) -> Unit,
     showDebug: Boolean,
     debugAvailable: Boolean,
     onBack: () -> Unit,
@@ -177,6 +182,21 @@ fun LiveScanOverlay(
                         20f
                     )
         )
+
+        if (maximumZoomRatio > minimumZoomRatio + 0.01f) {
+            LiveScanZoomControl(
+                zoomRatio = zoomRatio,
+                minimumZoomRatio = minimumZoomRatio,
+                maximumZoomRatio = maximumZoomRatio,
+                onZoomChange = onZoomChange,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 18.dp, end = 18.dp, top = 122.dp)
+                    .zIndex(20f)
+            )
+        }
 
 
         /*
@@ -1467,5 +1487,59 @@ private fun LiveScanErrorCard(
                     .colorScheme
                     .onErrorContainer
         )
+    }
+}
+
+@Composable
+private fun LiveScanZoomControl(
+    zoomRatio: Float,
+    minimumZoomRatio: Float,
+    maximumZoomRatio: Float,
+    onZoomChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+        tonalElevation = 3.dp
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = { onZoomChange(zoomRatio / 1.25f) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text("−", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+                Slider(
+                    value = zoomRatio.coerceIn(minimumZoomRatio, maximumZoomRatio),
+                    onValueChange = onZoomChange,
+                    valueRange = minimumZoomRatio..maximumZoomRatio,
+                    modifier = Modifier.weight(1f)
+                )
+                Surface(
+                    onClick = { onZoomChange(zoomRatio * 1.25f) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text("+", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+                Text(
+                    text = "%.1f×".format(zoomRatio),
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+            Text(
+                text = "Pinch or slide to zoom",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
     }
 }
