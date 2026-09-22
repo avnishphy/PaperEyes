@@ -162,6 +162,23 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - Follow-up on the same page: only the Patrick Nadeem/ICML entry survived strict citation validation. When one strong citation anchors a page and at least three neighboring paragraphs repeat author-list, citation-punctuation, and terminal-year structure, those structural entries are now accepted even if their italic venue text is garbled. A prose-only control fixture prevents this fallback from activating on ordinary paragraphs. Verification passes with 138 JVM tests, a successful debug build, and lint at 0 errors/23 warnings.
 - Further device feedback showed an OCR-coverage ceiling: the Moffat two-column page returned roughly 18–20 of 30 printed entries (`[53]`–`[82]`), while the unnumbered page still exposed only its clearest paragraph. Reference-focused Live Scan and Import now use the first OCR pass to locate the readable text envelope, decode that bounded region at a 2400 px memory cap, enlarge it by at most 2×, OCR it once, and merge it with the baseline evidence. This retains whole lines for both one- and two-column pages without holding multiple large bitmaps. Verification passes with 140 JVM tests, a successful debug build, and lint at 0 errors (the initial run reported 24 warnings before the new KTX scaling warning was removed).
 
+## UI coherence milestone
+
+Reference-count robustness is intentionally deferred after device testing continued to expose only the Patrick Nadeem entry on the unnumbered bibliography page. Do not expand OCR/parsing heuristics during the current UI milestone.
+
+The approved "Quiet Lab Notebook" direction is implemented in focused commits:
+
+- `773585b`: fixed print-inspired light/dark palette, complete type scale, restrained shapes, and dynamic wallpaper colors disabled;
+- `4f02e9b`: three top-level Scan/Library/Projects destinations, simplified Scan landing hierarchy, and a quiet About attribution using the placeholder `captain_marvel`;
+- `d0440c0`: direct-action scan-source bottom sheet for journal article, reference list, and conference slide;
+- `a2f949a`: full-width reference result rows, identified/review counts and filters, and candidate bottom sheet;
+- `2eeda94`: explicit scan-source context and literal camera/status messaging;
+- `c6b4899`: scroll-safe paper detail, quieter library surfaces, clearer action hierarchy, and restrained empty-state research/physics copy.
+
+The original launcher artwork and all OCR/camera/domain behavior remain unchanged by this UI milestone.
+
+Verification on 2026-09-22 passed: 140 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed with 0 errors and 23 existing warnings.
+
 ## Next action
 
-Reconnect the A069P and verify its camera privacy indicator turns off immediately when Live Scan is sent to the background. Then verify launcher re-entry keeps one activity, toggle connectivity during lookup, and repeat the supplied bibliography, DropConnect slide, and “Shedding light…” cases in Android Studio.
+Inspect the updated flows in Android Studio on the A069P at normal and large font sizes, in light and dark modes. Verify Scan → result → paper → Back preserves the reference list, Projects opens on its own destination, the camera privacy indicator turns off in the background, and the scan-source bottom sheet remains usable with gesture navigation.
