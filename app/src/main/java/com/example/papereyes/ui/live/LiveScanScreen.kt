@@ -58,12 +58,14 @@ import com.example.papereyes.domain.isConnectivityFailure
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.domain.evidence.ScanSubject
 import com.example.papereyes.domain.evidence.hasRequestedEvidence
+import com.example.papereyes.domain.evidence.mergeReferenceEvidence
 import com.example.papereyes.domain.evidence.referencesFor
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
 import com.example.papereyes.domain.reference.ReferenceBatchResolver
 import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 import com.example.papereyes.ocr.TextRecognizerService
+import com.example.papereyes.ocr.OcrResult
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.toUserFacingMessage
@@ -1154,16 +1156,22 @@ fun LiveScanScreen(
                                                     var candidate = ocrResult.bestQuery.trim()
 
                                                     /*
-                                                     * Adaptive Super Burst fallback. If the first
-                                                     * native-resolution OCR result is weak, capture
-                                                     * two more frames, choose the sharper fallback
-                                                     * frame, and OCR that original JPEG. Difficult
-                                                     * scans still get the historical three-frame
-                                                     * behavior, while normal scans finish much faster.
+                                                     * Adaptive Super Burst fallback. Reference scans
+                                                     * always confirm against a second OCR observation;
+                                                     * paper scans only pay for it when the first native-
+                                                     * resolution result is weak. The two reference lists
+                                                     * are merged conservatively to stabilize their count.
                                                      */
-                                                    if (!ocrResult.evidence.hasRequestedEvidence(scanSubject)) {
+                                                    if (
+                                                        scanSubject.isReferenceFocused ||
+                                                        !ocrResult.evidence.hasRequestedEvidence(scanSubject)
+                                                    ) {
                                                         statusMessage =
-                                                            "First frame unclear — capturing 2 more…"
+                                                            if (scanSubject.isReferenceFocused) {
+                                                                "Confirming reference list — capturing 2 more…"
+                                                            } else {
+                                                                "First frame unclear — capturing 2 more…"
+                                                            }
 
                                                         trace.mark(ScanStage.CAPTURE_START)
                                                         val fallbackFrames =
@@ -1200,8 +1208,35 @@ fun LiveScanScreen(
                                                         statusMessage =
                                                             scanSubject.readingMessage()
 
-                                                        ocrResult = highResRecognizer.recognizeCameraCapture(
+                                                        val fallbackResult = highResRecognizer.recognizeCameraCapture(
                                                             context, Uri.fromFile(sharpestFallback.file), trace)
+
+                                                        ocrResult =
+                                                            if (scanSubject.isReferenceFocused) {
+                                                                val primaryResult = ocrResult
+                                                                val preferredResult =
+                                                                    listOf(primaryResult, fallbackResult)
+                                                                        .maxWithOrNull(
+                                                                            compareBy<OcrResult> {
+                                                                                it.evidence.references.size
+                                                                            }.thenBy {
+                                                                                it.rawText.length
+                                                                            }
+                                                                        ) ?: primaryResult
+                                                                val combinedReferences =
+                                                                    mergeReferenceEvidence(
+                                                                        primaryResult.evidence.references,
+                                                                        fallbackResult.evidence.references
+                                                                    )
+
+                                                                preferredResult.copy(
+                                                                    evidence = preferredResult.evidence.copy(
+                                                                        references = combinedReferences
+                                                                    )
+                                                                )
+                                                            } else {
+                                                                fallbackResult
+                                                            }
                                                         candidate = ocrResult.bestQuery.trim()
                                                     }
 

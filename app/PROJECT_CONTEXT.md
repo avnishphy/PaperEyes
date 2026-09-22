@@ -68,7 +68,7 @@ Live Scan currently works as follows:
 1. CameraX preview analysis runs roughly every 650 ms at 1280x720.
 2. Preview OCR only decides whether enough text is visible.
 3. One full-resolution JPEG is captured and OCR'd.
-4. If evidence is weak, two fallback JPEGs are captured and the sharpest fallback is OCR'd.
+4. Paper scans use two fallback JPEGs only when evidence is weak. Reference-focused scans always verify against the sharpest fallback and conservatively merge both OCR observations.
 5. Evidence is resolved; only a verified or ambiguity-safe high-score result locks scanning.
 6. Temporary captures are deleted and recognizer/camera ownership is guarded across cancellation.
 
@@ -151,6 +151,13 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21: final stability verification passed: 131 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed successfully with 0 errors.
 - 2026-09-21: Live Scan now explicitly observes the activity lifecycle. `ON_STOP` invalidates pending camera binds, cancels active capture/lookup work, clears analysis and camera control, and calls `unbindAll`; `ON_START` creates a fresh session only when scanning is not result-locked. Full JVM tests and `assembleDebug` pass. The planned hardware-level background-camera check could not run because the A069P disconnected before installation.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
+
+## Latest small-update state
+
+- Commits `b2842ba` and `d641ea6` add New project from paper details and full-screen reference selection/results. Their full JVM test runs passed before commit.
+- Launcher artwork and every density-specific bitmap were restored byte-for-byte to the committed original after the proposed redesign and prefilter were rejected.
+- Pending reference-stability working tree: reference scans always compare two OCR observations and merge complementary entries using labels plus conservative text similarity. New JVM tests cover complementary frames, unnumbered variants, OCR label drift, and distinct similar references.
+- Final verification passed on 2026-09-21: 135 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed with 0 errors and 23 warnings. The only compile warning shown was the existing CameraX `setTargetResolution` deprecation. The reference-stability slice and this context update remain uncommitted.
 
 ## Next action
 
