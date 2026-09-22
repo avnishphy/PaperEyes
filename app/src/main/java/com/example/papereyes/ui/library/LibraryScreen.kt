@@ -93,7 +93,7 @@ fun LibraryScreen(
 
 
     var selectedSection by
-    remember {
+    remember(initialSectionIsProjects) {
 
         mutableStateOf(
             if (initialSectionIsProjects) LibrarySection.PROJECTS else LibrarySection.ALL_PAPERS
