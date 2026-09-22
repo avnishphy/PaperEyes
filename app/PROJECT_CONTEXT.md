@@ -149,8 +149,9 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - 2026-09-21 black-screen root cause fixed: camera locking had incorrectly removed `LiveScanOverlay` together with `PreviewView`. The camera can now stop on a result or lookup failure while status, errors, results, and retry controls remain visible over the black background.
 - 2026-09-21 connectivity guardrails added: lookups require a validated network, Live Scan locks on a visible offline/interrupted state with `Try again`, and a reference batch stops network requests after its first transport failure while preserving an outcome for every selected reference.
 - 2026-09-21: final stability verification passed: 131 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed successfully with 0 errors.
+- 2026-09-21: Live Scan now explicitly observes the activity lifecycle. `ON_STOP` invalidates pending camera binds, cancels active capture/lookup work, clears analysis and camera control, and calls `unbindAll`; `ON_START` creates a fresh session only when scanning is not result-locked. Full JVM tests and `assembleDebug` pass. The planned hardware-level background-camera check could not run because the A069P disconnected before installation.
 - Device baseline supplied by user: OCR works well; positive live matches take about 2–3 seconds; some clean frames are still missed.
 
 ## Next action
 
-Install the latest debug build, verify launcher re-entry keeps one activity, toggle connectivity during lookup, then repeat the supplied bibliography, DropConnect slide, and “Shedding light…” device cases in Android Studio.
+Reconnect the A069P and verify its camera privacy indicator turns off immediately when Live Scan is sent to the background. Then verify launcher re-entry keeps one activity, toggle connectivity during lookup, and repeat the supplied bibliography, DropConnect slide, and “Shedding light…” cases in Android Studio.
