@@ -44,7 +44,7 @@ import com.example.papereyes.domain.reference.ReferenceBatchResolver
 import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.domain.reference.ReferenceResolutionStatus
 import com.example.papereyes.ocr.TextRecognizerService
-import com.example.papereyes.ui.common.ReferenceBatchSummary
+import com.example.papereyes.ui.common.ReferenceBatchResults
 import com.example.papereyes.ui.common.ReferenceSelectionDialog
 import com.example.papereyes.ui.common.SaveIdentifiedPapersDialog
 import com.example.papereyes.ui.common.ScanSubjectDialog
@@ -638,7 +638,7 @@ fun ScanScreen(
 
         referenceProgress?.let { progress ->
             item {
-                ReferenceBatchSummary(
+                ReferenceBatchResults(
                     outcomes = referenceOutcomes,
                     completed = progress.completed,
                     total = progress.total,

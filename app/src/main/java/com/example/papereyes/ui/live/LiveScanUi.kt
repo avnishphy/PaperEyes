@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.reference.ReferenceResolution
-import com.example.papereyes.ui.common.ReferenceBatchSummary
+import com.example.papereyes.ui.common.ReferenceBatchResults
 
 
 /*
@@ -231,7 +231,7 @@ fun LiveScanOverlay(
 
             if (referenceTotal > 0) {
 
-                ReferenceBatchSummary(
+                ReferenceBatchResults(
                     outcomes = referenceOutcomes,
                     completed = referenceCompleted,
                     total = referenceTotal,
