@@ -44,9 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.papereyes.BuildConfig
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.data.local.LibraryRepository
@@ -71,7 +74,10 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -79,6 +85,7 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -512,6 +519,12 @@ fun LiveScanScreen(
         mutableStateOf(false)
     }
 
+    var cameraSessionActive by remember(lifecycleOwner) {
+        mutableStateOf(
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        )
+    }
+
 
     var papers by remember {
 
@@ -615,6 +628,18 @@ fun LiveScanScreen(
         AtomicBoolean(false)
     }
 
+    val foregroundRef = remember {
+        AtomicBoolean(cameraSessionActive)
+    }
+
+    val cameraGenerationRef = remember {
+        AtomicLong(0L)
+    }
+
+    val activeScanJobRef = remember {
+        AtomicReference<Job?>(null)
+    }
+
     val cameraProviderRef = remember {
         AtomicReference<ProcessCameraProvider?>(null)
     }
@@ -627,6 +652,24 @@ fun LiveScanScreen(
         AtomicReference<CameraControl?>(null)
     }
 
+    fun stopCameraSession() {
+        cameraGenerationRef.incrementAndGet()
+        imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
+        cameraControlRef.set(null)
+        cameraProviderRef.getAndSet(null)?.let { provider ->
+            runCatching { provider.unbindAll() }
+        }
+    }
+
+    fun launchTrackedScan(block: suspend CoroutineScope.() -> Unit) {
+        val job = coroutineScope.launch(start = CoroutineStart.LAZY, block = block)
+        activeScanJobRef.getAndSet(job)?.cancel()
+        job.invokeOnCompletion {
+            activeScanJobRef.compareAndSet(job, null)
+        }
+        job.start()
+    }
+
     fun applyZoom(requested: Float) {
         val clamped = clampZoomRatio(requested, minimumZoomRatio, maximumZoomRatio)
         zoomRatio = clamped
@@ -637,9 +680,36 @@ fun LiveScanScreen(
 
     LaunchedEffect(scanningLocked) {
         if (scanningLocked) {
-            imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
-            cameraControlRef.set(null)
-            cameraProviderRef.get()?.unbindAll()
+            stopCameraSession()
+        }
+    }
+
+    LaunchedEffect(cameraSessionActive) {
+        if (cameraSessionActive && !scanningLocked) {
+            captureInProgress = false
+            resolving = false
+            statusMessage = scanSubject.scanGuidance()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                foregroundRef.set(true)
+                cameraSessionActive = true
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                foregroundRef.set(false)
+                cameraSessionActive = false
+                activeScanJobRef.getAndSet(null)?.cancel()
+                stopCameraSession()
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -699,12 +769,12 @@ fun LiveScanScreen(
 
         onDispose {
             disposedRef.set(true)
+            foregroundRef.set(false)
+            activeScanJobRef.getAndSet(null)?.cancel()
 
             // CameraX is bound to the Activity lifecycle, which can outlive this
             // composable. Explicitly detach the analyzer/use cases first.
-            imageAnalysisRef.getAndSet(null)?.clearAnalyzer()
-            cameraControlRef.set(null)
-            cameraProviderRef.getAndSet(null)?.unbindAll()
+            stopCameraSession()
 
             liveCompletionGate.close()
             highResRecognizer.close()
@@ -780,12 +850,14 @@ fun LiveScanScreen(
          * CAMERA PREVIEW
          * ------------------------------------------------------------
          */
-        if (!scanningLocked) {
+        if (!scanningLocked && cameraSessionActive) {
         AndroidView(
             modifier =
                 Modifier.fillMaxSize(),
 
             factory = { previewContext ->
+
+                val cameraGeneration = cameraGenerationRef.incrementAndGet()
 
                 val previewView =
                     PreviewView(
@@ -856,8 +928,11 @@ fun LiveScanScreen(
                                 cameraProviderFuture
                                     .get()
 
-                            if (disposedRef.get()) {
-                                cameraProvider.unbindAll()
+                            if (
+                                disposedRef.get() ||
+                                !foregroundRef.get() ||
+                                cameraGeneration != cameraGenerationRef.get()
+                            ) {
                                 return@addListener
                             }
 
@@ -922,7 +997,11 @@ fun LiveScanScreen(
                                 cameraExecutor
                             ) { imageProxy ->
 
-                                if (disposedRef.get()) {
+                                if (
+                                    disposedRef.get() ||
+                                    !foregroundRef.get() ||
+                                    cameraGeneration != cameraGenerationRef.get()
+                                ) {
                                     imageProxy.close()
                                     return@setAnalyzer
                                 }
@@ -962,6 +1041,10 @@ fun LiveScanScreen(
                                     onText = { text, trace ->
 
                                         coroutineScope.launch {
+
+                                            if (!foregroundRef.get()) {
+                                                return@launch
+                                            }
 
                                             /*
                                              * Once a paper has been found,
@@ -1037,7 +1120,7 @@ fun LiveScanScreen(
                                                 "Text detected — capturing…"
 
 
-                                            coroutineScope.launch {
+                                            val scanJob = coroutineScope.launch {
                                                 val capturedFiles =
                                                     mutableListOf<File>()
 
@@ -1264,6 +1347,10 @@ fun LiveScanScreen(
                                                     resolving = false
                                                 }
                                             }
+                                            activeScanJobRef.getAndSet(scanJob)?.cancel()
+                                            scanJob.invokeOnCompletion {
+                                                activeScanJobRef.compareAndSet(scanJob, null)
+                                            }
                                         }
                                     }
                                 )
@@ -1455,7 +1542,7 @@ fun LiveScanScreen(
             },
             onSearch = { selected ->
                 pendingReferences = emptyList()
-                coroutineScope.launch { resolveReferences(selected) }
+                launchTrackedScan { resolveReferences(selected) }
             }
         )
     }
