@@ -747,7 +747,7 @@ private fun EmptyPapersContent() {
 
         Text(
             text =
-                "Papers you save will appear here.",
+                "A vacuum state — for now.",
 
             style =
                 MaterialTheme
@@ -813,7 +813,7 @@ private fun ProjectsContent(
 
             Text(
                 text =
-                    "Create a project to organize related papers.",
+                "Create one when a line of inquiry starts to take shape.",
 
                 style =
                     MaterialTheme
@@ -950,13 +950,13 @@ private fun ProjectCard(
                 containerColor =
                     MaterialTheme
                         .colorScheme
-                        .surfaceVariant
+                        .surface
             ),
 
         elevation =
             CardDefaults.cardElevation(
                 defaultElevation =
-                    1.dp
+                    0.dp
             )
     ) {
 
@@ -1207,13 +1207,13 @@ private fun LibraryPaperCard(
                 containerColor =
                     MaterialTheme
                         .colorScheme
-                        .surfaceVariant
+                        .surface
             ),
 
         elevation =
             CardDefaults.cardElevation(
                 defaultElevation =
-                    1.dp
+                    0.dp
             )
     ) {
 

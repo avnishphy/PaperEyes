@@ -2,6 +2,8 @@ package com.example.papereyes.ui.detail
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -334,6 +336,7 @@ fun PaperDetailScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(
                 horizontal = 20.dp
             )
@@ -437,7 +440,7 @@ fun PaperDetailScreen(
             style =
                 MaterialTheme
                     .typography
-                    .headlineSmall,
+                    .titleLarge,
 
             fontWeight =
                 FontWeight.SemiBold
@@ -641,11 +644,11 @@ fun PaperDetailScreen(
                             selectedProjectIds.isEmpty()
                         ) {
 
-                            "Add to Projects"
+                            "Add to projects"
 
                         } else {
 
-                            "Manage Projects"
+                            "Manage projects"
                         }
                 )
             }
@@ -724,7 +727,7 @@ fun PaperDetailScreen(
 
             } else {
 
-                Button(
+                OutlinedButton(
                     modifier =
                         Modifier.fillMaxWidth(),
 
@@ -765,7 +768,7 @@ fun PaperDetailScreen(
 
                     Text(
                         text =
-                            "Save to Library"
+                            "Save to library"
                     )
                 }
             }
@@ -795,7 +798,7 @@ fun PaperDetailScreen(
                 )
 
 
-                OutlinedButton(
+                Button(
                     modifier =
                         Modifier.fillMaxWidth(),
 
@@ -824,7 +827,7 @@ fun PaperDetailScreen(
 
                     Text(
                         text =
-                            "Open Paper Link"
+                            "Open paper"
                     )
                 }
             }

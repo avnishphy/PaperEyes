@@ -486,11 +486,11 @@ fun ProjectScreen(
                             allLibraryPapers.isEmpty()
                         ) {
 
-                            "Your Library does not contain any papers yet."
+                            "Nothing in this state yet. Save a paper first."
 
                         } else {
 
-                            "Add papers from your Library."
+                            "Nothing in this state yet. Add papers from your Library."
                         },
 
                     style =
