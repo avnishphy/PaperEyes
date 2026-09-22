@@ -7,7 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +24,8 @@ import com.example.papereyes.data.local.ProjectEntity
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.evidence.ScanSubject
 import com.example.papereyes.ui.detail.PaperDetailScreen
+import com.example.papereyes.ui.common.PaperEyesDestination
+import com.example.papereyes.ui.common.PaperEyesNavigationBar
 import com.example.papereyes.ui.library.LibraryScreen
 import com.example.papereyes.ui.library.ProjectScreen
 import com.example.papereyes.ui.live.LiveScanScreen
@@ -199,7 +204,10 @@ class MainActivity : ComponentActivity() {
                     }
 
                 } else if (
-                    currentScreen == "library" &&
+                    currentScreen in setOf(
+                        PaperEyesDestination.LIBRARY.route,
+                        PaperEyesDestination.PROJECTS.route
+                    ) &&
                     !liveScanOpen
                 ) {
 
@@ -229,9 +237,34 @@ class MainActivity : ComponentActivity() {
                             .background
                 ) {
 
+                    val showPrimaryNavigation =
+                        !liveScanOpen && selectedProject == null && selectedPaper == null
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        bottomBar = {
+                            if (showPrimaryNavigation) {
+                                PaperEyesNavigationBar(
+                                    currentRoute = currentScreen,
+                                    onDestinationSelected = { destination ->
+                                        selectedProject = null
+                                        currentScreen = destination.route
+                                    }
+                                )
+                            }
+                        }
+                    ) { contentPadding ->
                     Box(
-                        modifier =
-                            Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (showPrimaryNavigation) {
+                                    Modifier.padding(contentPadding)
+                                } else {
+                                    Modifier
+                                }
+                            )
                     ) {
 
                         /* Keep the underlying screen composed while paper
@@ -312,7 +345,7 @@ class MainActivity : ComponentActivity() {
                              * HOME / SCAN SCREEN
                              * ========================================
                              */
-                            currentScreen == "scan" -> {
+                            currentScreen == PaperEyesDestination.SCAN.route -> {
 
                                 ScanScreen(
                                     libraryRepository =
@@ -373,7 +406,8 @@ class MainActivity : ComponentActivity() {
                              * LIBRARY
                              * ========================================
                              */
-                            currentScreen == "library" -> {
+                            currentScreen == PaperEyesDestination.LIBRARY.route ||
+                                currentScreen == PaperEyesDestination.PROJECTS.route -> {
 
                                 LibraryScreen(
                                     libraryRepository =
@@ -406,6 +440,11 @@ class MainActivity : ComponentActivity() {
                                             "scan"
                                     },
 
+                                    showBack = false,
+
+                                    initialSectionIsProjects =
+                                        currentScreen == PaperEyesDestination.PROJECTS.route,
+
                                     onProjectClick = { project ->
 
                                         selectedProject =
@@ -427,6 +466,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                    }
                     }
                 }
             }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,7 +22,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -45,6 +52,7 @@ fun PaperEyesLandingSection(
     onOpenLibrary: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showAbout by remember { mutableStateOf(false) }
 
     Column(
         modifier =
@@ -56,7 +64,7 @@ fun PaperEyesLandingSection(
             )
     ) {
 
-        PaperEyesHero()
+        PaperEyesHero(onAbout = { showAbout = true })
 
 
         /*
@@ -66,74 +74,24 @@ fun PaperEyesLandingSection(
          *
          * Scan, import and library have equal visual weight.
          */
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-
-            horizontalArrangement =
-                Arrangement.spacedBy(
-                    10.dp
-                )
+        Button(
+            onClick = onLiveScan,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(14.dp)
         ) {
+            Text("Scan with camera", style = MaterialTheme.typography.labelLarge)
+        }
 
-            FeatureCard(
-                title =
-                    "Live Scan",
-
-                subtitle =
-                    "Camera",
-
-                iconType =
-                    FeatureIcon.Scan,
-
-                onClick =
-                    onLiveScan,
-
-                modifier =
-                    Modifier.weight(
-                        1f
-                    )
-            )
-
-
-            FeatureCard(
-                title =
-                    "Import",
-
-                subtitle =
-                    "Image / screenshot",
-
-                iconType =
-                    FeatureIcon.Import,
-
-                onClick =
-                    onImportImage,
-
-                modifier =
-                    Modifier.weight(
-                        1f
-                    )
-            )
-
-
-            FeatureCard(
-                title =
-                    "Library",
-
-                subtitle =
-                    "Papers & projects",
-
-                iconType =
-                    FeatureIcon.Library,
-
-                onClick =
-                    onOpenLibrary,
-
-                modifier =
-                    Modifier.weight(
-                        1f
-                    )
-            )
+        OutlinedButton(
+            onClick = onImportImage,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Import an image")
         }
 
 
@@ -204,6 +162,26 @@ fun PaperEyesLandingSection(
                 }
             }
     }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            title = { Text("About PaperEyes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("A quiet research companion for finding, saving, and organizing papers.")
+                    Text(
+                        "An experiment by captain_marvel — from one crowded paper trail to another.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAbout = false }) { Text("Close") }
+            }
+        )
+    }
 }
 
 
@@ -213,7 +191,7 @@ fun PaperEyesLandingSection(
  * ================================================================
  */
 @Composable
-private fun PaperEyesHero() {
+private fun PaperEyesHero(onAbout: () -> Unit) {
 
     Column(
         modifier =
@@ -230,18 +208,17 @@ private fun PaperEyesHero() {
          * APP NAME
          * ------------------------------------------------------------
          */
-        Text(
-            text =
-                "PaperEyes",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .headlineLarge,
-
-            fontWeight =
-                FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Text(
+                text = "PaperEyes",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.headlineLarge
+            )
+            TextButton(onClick = onAbout) { Text("About") }
+        }
 
 
         Spacer(
@@ -271,40 +248,11 @@ private fun PaperEyesHero() {
         )
 
 
-        Spacer(
-            modifier =
-                Modifier.height(
-                    22.dp
-                )
-        )
-
-
-        /*
-         * Direct description of the two main jobs of the app.
-         */
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text =
-                "Find papers.\nOrganize by project.",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .displaySmall
-                    .copy(
-                        lineHeight =
-                            40.sp
-                    ),
-
-            fontWeight =
-                FontWeight.SemiBold
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(
-                    2.dp
-                )
+            text = "Find the paper. Keep the thread.",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }

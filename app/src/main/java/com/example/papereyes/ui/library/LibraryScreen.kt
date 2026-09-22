@@ -59,6 +59,8 @@ fun LibraryScreen(
     libraryRepository: LibraryRepository,
     onPaperClick: (Paper) -> Unit,
     onBack: () -> Unit,
+    showBack: Boolean = true,
+    initialSectionIsProjects: Boolean = false,
 
     /*
      * We will wire this into a real Project screen in the next
@@ -94,7 +96,7 @@ fun LibraryScreen(
     remember {
 
         mutableStateOf(
-            LibrarySection.ALL_PAPERS
+            if (initialSectionIsProjects) LibrarySection.PROJECTS else LibrarySection.ALL_PAPERS
         )
     }
 
@@ -190,7 +192,7 @@ fun LibraryScreen(
              * BACK BUTTON
              * --------------------------------------------------------
              */
-            Surface(
+            if (showBack) Surface(
                 modifier = Modifier
                     .size(
                         48.dp
@@ -236,7 +238,7 @@ fun LibraryScreen(
             }
 
 
-            Spacer(
+            if (showBack) Spacer(
                 modifier = Modifier.size(
                     14.dp
                 )
@@ -255,9 +257,9 @@ fun LibraryScreen(
                     )
             ) {
 
-                Text(
-                    text =
-                        "Library",
+                    Text(
+                        text =
+                            if (selectedSection == LibrarySection.PROJECTS) "Projects" else "Library",
 
                     style =
                         MaterialTheme
@@ -407,7 +409,7 @@ fun LibraryScreen(
          * ALL PAPERS / PROJECTS SELECTOR
          * ============================================================
          */
-        LibrarySectionSelector(
+        if (showBack) LibrarySectionSelector(
             selectedSection =
                 selectedSection,
 

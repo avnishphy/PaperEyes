@@ -632,8 +632,7 @@ fun ScanScreen(
                  * This is optional for now so existing MainActivity
                  * code still compiles.
                  */
-                onOpenLibrary =
-                    onLibraryClick
+                onOpenLibrary = onLibraryClick
             )
         }
 
