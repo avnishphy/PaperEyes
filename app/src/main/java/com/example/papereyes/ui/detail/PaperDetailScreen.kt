@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -129,6 +130,15 @@ fun PaperDetailScreen(
     }
 
 
+    var showCreateProjectDialog by
+    remember {
+
+        mutableStateOf(
+            false
+        )
+    }
+
+
     /*
      * ================================================================
      * LOAD SAVED STATE
@@ -203,6 +213,15 @@ fun PaperDetailScreen(
                     false
             },
 
+            onNewProject = {
+
+                showProjectDialog =
+                    false
+
+                showCreateProjectDialog =
+                    true
+            },
+
             onSave = {
 
                 coroutineScope.launch {
@@ -247,6 +266,60 @@ fun PaperDetailScreen(
                         Toast.makeText(
                             context,
                             "Couldn't update project assignments",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        )
+    }
+
+
+    if (
+        showCreateProjectDialog
+    ) {
+
+        CreateProjectDialog(
+            onDismiss = {
+
+                showCreateProjectDialog =
+                    false
+
+                showProjectDialog =
+                    true
+            },
+
+            onCreate = { projectName ->
+
+                coroutineScope.launch {
+                    try {
+                        val projectId =
+                            libraryRepository.createProject(
+                                projectName
+                            )
+
+                        if (projectId != null) {
+                            draftProjectIds =
+                                draftProjectIds + projectId
+
+                            showCreateProjectDialog =
+                                false
+
+                            showProjectDialog =
+                                true
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Project name is empty or already in use",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    } catch (exception: CancellationException) {
+                        throw exception
+                    } catch (_: Throwable) {
+                        Toast.makeText(
+                            context,
+                            "Couldn't create project",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -547,11 +620,7 @@ fun PaperDetailScreen(
         )
 
 
-        if (
-            projects.isNotEmpty()
-        ) {
-
-            OutlinedButton(
+        OutlinedButton(
                 modifier =
                     Modifier.fillMaxWidth(),
 
@@ -580,24 +649,6 @@ fun PaperDetailScreen(
                         }
                 )
             }
-
-        } else {
-
-            Text(
-                text =
-                    "Create a project from Library → Projects first.",
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .bodySmall,
-
-                color =
-                    MaterialTheme
-                        .colorScheme
-                        .onSurfaceVariant
-            )
-        }
 
 
         /*
@@ -841,6 +892,7 @@ private fun ProjectSelectionDialog(
         projectId: Int,
         selected: Boolean
     ) -> Unit,
+    onNewProject: () -> Unit,
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
@@ -979,14 +1031,97 @@ private fun ProjectSelectionDialog(
         },
 
         dismissButton = {
+            Row {
+                TextButton(
+                    onClick = onNewProject
+                ) {
+                    Text(
+                        text =
+                            "New project"
+                    )
+                }
 
+                TextButton(
+                    onClick = {
+
+                        onDismiss()
+                    }
+                ) {
+
+                    Text(
+                        text =
+                            "Cancel"
+                    )
+                }
+            }
+        }
+    )
+}
+
+
+@Composable
+private fun CreateProjectDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
+
+    var projectName by
+    remember {
+
+        mutableStateOf(
+            ""
+        )
+    }
+
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text =
+                    "New project"
+            )
+        },
+        text = {
+            OutlinedTextField(
+                modifier =
+                    Modifier.fillMaxWidth(),
+                value =
+                    projectName,
+                onValueChange = {
+                    projectName =
+                        it
+                },
+                label = {
+                    Text(
+                        text =
+                            "Project name"
+                    )
+                },
+                singleLine =
+                    true
+            )
+        },
+        confirmButton = {
             TextButton(
+                enabled =
+                    projectName.isNotBlank(),
                 onClick = {
-
-                    onDismiss()
+                    onCreate(
+                        projectName
+                    )
                 }
             ) {
-
+                Text(
+                    text =
+                        "Create"
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss
+            ) {
                 Text(
                     text =
                         "Cancel"
