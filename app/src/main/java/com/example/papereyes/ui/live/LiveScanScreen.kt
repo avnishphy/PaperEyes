@@ -1208,8 +1208,21 @@ fun LiveScanScreen(
                                                         statusMessage =
                                                             scanSubject.readingMessage()
 
-                                                        val fallbackResult = highResRecognizer.recognizeCameraCapture(
-                                                            context, Uri.fromFile(sharpestFallback.file), trace)
+                                                        val fallbackResult =
+                                                            if (scanSubject.isReferenceFocused) {
+                                                                highResRecognizer.recognizeReferenceCrop(
+                                                                    context,
+                                                                    Uri.fromFile(sharpestFallback.file),
+                                                                    ocrResult,
+                                                                    trace
+                                                                )
+                                                            } else {
+                                                                highResRecognizer.recognizeCameraCapture(
+                                                                    context,
+                                                                    Uri.fromFile(sharpestFallback.file),
+                                                                    trace
+                                                                )
+                                                            }
 
                                                         ocrResult =
                                                             if (scanSubject.isReferenceFocused) {

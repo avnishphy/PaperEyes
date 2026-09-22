@@ -37,6 +37,7 @@ import com.example.papereyes.domain.PaperInputType
 import com.example.papereyes.domain.PaperResolver
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.domain.evidence.ScanSubject
+import com.example.papereyes.domain.evidence.mergeReferenceEvidence
 import com.example.papereyes.domain.evidence.referencesFor
 import com.example.papereyes.domain.reference.ReferenceBatchProgress
 import com.example.papereyes.domain.reference.ReferenceBatchResolver
@@ -356,7 +357,7 @@ fun ScanScreen(
                      * OCR
                      * ------------------------------------------------
                      */
-                    val ocrResult =
+                    var ocrResult =
                         withContext(
                             Dispatchers.IO
                         ) {
@@ -370,6 +371,27 @@ fun ScanScreen(
                                         uri
                                 )
                         }
+
+
+                    if (importScanSubject.isReferenceFocused) {
+                        val baseline = ocrResult
+                        val cropped =
+                            textRecognizer.recognizeReferenceCrop(
+                                context = context,
+                                uri = uri,
+                                baseline = baseline
+                            )
+                        val combinedReferences =
+                            mergeReferenceEvidence(
+                                baseline.evidence.references,
+                                cropped.evidence.references
+                            )
+                        ocrResult = cropped.copy(
+                            evidence = cropped.evidence.copy(
+                                references = combinedReferences
+                            )
+                        )
+                    }
 
 
                     rawOcrText =

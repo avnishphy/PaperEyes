@@ -15,15 +15,18 @@ object TextCandidateExtractor {
         analyze(result, imageWidth, imageHeight).bestQuery
 
     fun analyze(result: Text, imageWidth: Int, imageHeight: Int): DocumentEvidence {
-        val lines = result.textBlocks.flatMapIndexed { blockId, block ->
+        val lines = extractLines(result)
+        return DocumentLayoutAnalyzer.analyze(result.text, lines, imageWidth, imageHeight)
+    }
+
+    fun extractLines(result: Text): List<OcrLine> =
+        result.textBlocks.flatMapIndexed { blockId, block ->
             block.lines.mapNotNull { line ->
                 line.boundingBox?.let { box ->
                     OcrLine(line.text, box.left.toFloat(), box.top.toFloat(), box.right.toFloat(), box.bottom.toFloat(), blockId)
                 }
             }
         }
-        return DocumentLayoutAnalyzer.analyze(result.text, lines, imageWidth, imageHeight)
-    }
 
     fun areSimilar(first: String, second: String): Boolean {
         fun normalize(value: String) = value.lowercase().replace(comparisonCleanup, " ").replace(whitespace, " ").trim()
