@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
@@ -16,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.papereyes.domain.evidence.ReferenceEvidence
 import com.example.papereyes.data.model.Paper
 import com.example.papereyes.domain.reference.ReferenceResolution
@@ -42,11 +48,29 @@ fun ReferenceSelectionDialog(
         mutableStateOf(references.indices.toSet())
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("${references.size} references found") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "${references.size} references found",
+                    style = MaterialTheme.typography.headlineSmall
+                )
                 Text(
                     "Search all references, or clear the ones you don't want to look up.",
                     style = MaterialTheme.typography.bodyMedium
@@ -60,7 +84,7 @@ fun ReferenceSelectionDialog(
                     }
                 }
                 LazyColumn(
-                    modifier = Modifier.heightIn(max = 420.dp),
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     itemsIndexed(references) { index, reference ->
@@ -102,22 +126,29 @@ fun ReferenceSelectionDialog(
                         }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = selectedIndexes.isNotEmpty(),
-                onClick = {
-                    onSearch(references.filterIndexed { index, _ -> index in selectedIndexes })
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(
+                        enabled = selectedIndexes.isNotEmpty(),
+                        onClick = {
+                            onSearch(references.filterIndexed { index, _ -> index in selectedIndexes })
+                        }
+                    ) {
+                        Text(
+                            if (selectedIndexes.size == references.size) {
+                                "Search all"
+                            } else {
+                                "Search selected"
+                            }
+                        )
+                    }
                 }
-            ) {
-                Text(if (selectedIndexes.size == references.size) "Search all" else "Search selected")
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    }
 }
 
 @Composable
@@ -162,7 +193,7 @@ fun ReferenceBatchSummary(
                 .then(
                     if (scrollable) {
                         Modifier
-                            .heightIn(max = 420.dp)
+                            .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                     } else {
                         Modifier

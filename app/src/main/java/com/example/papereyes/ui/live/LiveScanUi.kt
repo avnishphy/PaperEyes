@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -161,17 +162,33 @@ fun LiveScanOverlay(
          */
         Column(
             modifier =
-                Modifier
-                    .align(
-                        Alignment.BottomCenter
-                    )
-                    .fillMaxWidth()
-                    .padding(
-                        12.dp
-                    )
-                    .zIndex(
-                        30f
-                    ),
+                if (referenceTotal > 0) {
+                    Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(
+                            start = 12.dp,
+                            top = 124.dp,
+                            end = 12.dp,
+                            bottom = 12.dp
+                        )
+                        .zIndex(
+                            30f
+                        )
+                } else {
+                    Modifier
+                        .align(
+                            Alignment.BottomCenter
+                        )
+                        .fillMaxWidth()
+                        .padding(
+                            12.dp
+                        )
+                        .zIndex(
+                            30f
+                        )
+                },
 
             verticalArrangement =
                 Arrangement.spacedBy(
@@ -218,6 +235,7 @@ fun LiveScanOverlay(
                     outcomes = referenceOutcomes,
                     completed = referenceCompleted,
                     total = referenceTotal,
+                    modifier = Modifier.weight(1f),
                     scrollable = true,
                     onPaperClick = onOpenPaper
                 )
