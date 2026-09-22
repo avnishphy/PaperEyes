@@ -108,6 +108,31 @@ class ReferenceDetectorTest {
     }
 
     @Test
+    fun repeatedBibliographyStructureKeepsEntriesWithGarbledVenues() {
+        val lines = listOf(
+            line("First Author and Second Author. A useful paper title. Unreadable Italic Venue, 2018.", 20f, block = 1),
+            line("Patrick Nadeem Ward, Ariella Smofsky, and Avishek Joey Bose. Improving exploration with flows. ICML Workshop, 2019.", 60f, block = 2),
+            line("Third Author and Fourth Author. Another useful research title. Blurred Publication Name, 2019.", 100f, block = 3),
+            line("Fifth Author and Sixth Author. A final useful research title. Smudged Proceedings Name, 2020.", 140f, block = 4)
+        )
+
+        val detection = ReferenceDetector.fromLayout(lines, 1000, 800)
+
+        assertEquals(4, detection.references.size)
+    }
+
+    @Test
+    fun repeatedOrdinaryProseWithoutOneStrongCitationStaysRejected() {
+        val lines = listOf(
+            line("Alice and Bob discussed the first experiment and summarized the observations in 2018.", 20f, block = 1),
+            line("Carol and Dave repeated the process and compared the resulting measurements in 2019.", 60f, block = 2),
+            line("Eve and Frank reviewed the evidence and described the remaining limitations in 2020.", 100f, block = 3)
+        )
+
+        assertTrue(ReferenceDetector.fromLayout(lines, 1000, 800).references.isEmpty())
+    }
+
+    @Test
     fun outputIsBoundedAndDuplicateQueriesCollapse() {
         val repeated = (1..60).joinToString("\n") { number ->
             "[$number] A. Author. A bounded paper title. Journal $number, 1 (2020). doi:10.1000/$number"

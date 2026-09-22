@@ -99,19 +99,31 @@ internal object ReferenceDetector {
         val detected = if (numbered.isNotEmpty()) {
             numbered
         } else {
-            unnumberedGroups.mapNotNull { group ->
+            val candidates = unnumberedGroups.mapNotNull { group ->
                 val relevant = if (headingPosition >= 0) {
                     group.filter { candidate -> lines.indexOf(candidate) > headingPosition }
                 } else {
                     group
                 }
                 val text = joinWrapped(relevant.map { it.text }).take(MAX_REFERENCE_CHARS)
-                if (!looksLikeUnnumberedReference(text)) null
-                else DetectedReference(
-                    evidence = ReferenceEvidence(null, text, bestQuery(text)),
-                    lineIndexes = relevant.mapTo(linkedSetOf()) { it.index }
+                if (text.isBlank()) null else UnnumberedCandidate(
+                    detected = DetectedReference(
+                        evidence = ReferenceEvidence(null, text, bestQuery(text)),
+                        lineIndexes = relevant.mapTo(linkedSetOf()) { it.index }
+                    ),
+                    strong = looksLikeUnnumberedReference(text),
+                    structural = looksLikeBibliographyParagraph(text)
                 )
             }
+
+            val repeatedBibliographyLayout =
+                headingPosition >= 0 ||
+                    (candidates.count { it.strong } >= 1 &&
+                        candidates.count { it.structural } >= MIN_STRUCTURAL_REFERENCES)
+
+            candidates
+                .filter { it.strong || (repeatedBibliographyLayout && it.structural) }
+                .map { it.detected }
         }
 
         val unique = detected
@@ -208,6 +220,20 @@ internal object ReferenceDetector {
         return hasYear && hasAuthorSignal && hasPublicationSignal
     }
 
+    private fun looksLikeBibliographyParagraph(text: String): Boolean {
+        if (!isUsableReference(text) || text.length < MIN_STRUCTURAL_REFERENCE_CHARS) return false
+        if (!referenceEnding.containsMatchIn(text)) return false
+
+        val hasAuthorList =
+            text.contains(" and ", ignoreCase = true) ||
+                text.count { it == ',' } >= 2 ||
+                authorSignal.containsMatchIn(text)
+        val hasCitationPunctuation =
+            text.count { it == '.' } >= 2 ||
+                text.count { it == ',' } >= 3
+        return hasAuthorList && hasCitationPunctuation
+    }
+
     private fun bestQuery(text: String): String {
         ScholarlyIdentifiers.extractDoi(text)?.let { return it.take(MAX_QUERY_CHARS) }
         ScholarlyIdentifiers.extractArxivId(text)?.let { return "arXiv:$it" }
@@ -262,8 +288,16 @@ internal object ReferenceDetector {
         val lineIndexes: Set<Int>
     )
 
+    private data class UnnumberedCandidate(
+        val detected: DetectedReference,
+        val strong: Boolean,
+        val structural: Boolean
+    )
+
     private const val MIN_UNHEADED_NUMBERED_REFERENCES = 2
     private const val MIN_QUOTED_TITLE_CHARS = 8
+    private const val MIN_STRUCTURAL_REFERENCES = 3
+    private const val MIN_STRUCTURAL_REFERENCE_CHARS = 45
     private const val MAX_REFERENCES = 50
     private const val MAX_REFERENCE_CHARS = 800
     private const val MAX_QUERY_CHARS = 500
