@@ -83,6 +83,31 @@ class ReferenceDetectorTest {
     }
 
     @Test
+    fun unnumberedHangingIndentBibliographySplitsOneMlKitBlock() {
+        val lines = listOf(
+            line("PAPAMAKARIOS, NALISNICK, REZENDE, MOHAMED AND LAKSHMINARAYANAN", 20f, block = 7),
+            line("Martin J. Wainwright and Michael I. Jordan. Graphical models, exponential families, and", 100f, block = 7),
+            line("variational inference. Foundations and Trends in Machine Learning, 1(1-2):1-305, 2008.", 118f, block = 7, left = 42f),
+            line("Prince Zizhuang Wang and William Yang Wang. Riemannian normalizing flow on variational", 146f, block = 7),
+            line("Wasserstein autoencoder for text modeling. ArXiv Preprint arXiv:1904.02399,", 164f, block = 7, left = 42f),
+            line("2019.", 182f, block = 7, left = 42f),
+            line("Patrick Nadeem Ward, Ariella Smofsky, and Avishek Joey Bose. Improving exploration in", 210f, block = 7),
+            line("soft-actor-critic with normalizing flows policies. ICML Workshop on Invertible Neural", 228f, block = 7, left = 42f),
+            line("Networks and Normalizing Flows, 2019.", 246f, block = 7, left = 42f),
+            line("Antoine Wehenkel and Gilles Louppe. Unconstrained monotonic neural networks. In Advances", 274f, block = 7),
+            line("in Neural Information Processing Systems, 2019.", 292f, block = 7, left = 42f)
+        )
+
+        val detection = ReferenceDetector.fromLayout(lines, 1000, 800)
+
+        assertEquals(4, detection.references.size)
+        assertTrue(detection.references[0].text.startsWith("Martin J. Wainwright"))
+        assertEquals("arXiv:1904.02399", detection.references[1].query)
+        assertTrue(detection.references[3].text.contains("Neural Information Processing Systems"))
+        assertFalse(0 in detection.referenceLineIndexes)
+    }
+
+    @Test
     fun outputIsBoundedAndDuplicateQueriesCollapse() {
         val repeated = (1..60).joinToString("\n") { number ->
             "[$number] A. Author. A bounded paper title. Journal $number, 1 (2020). doi:10.1000/$number"
@@ -95,6 +120,6 @@ class ReferenceDetectorTest {
         assertTrue(detection.references.all { it.text.length <= 800 && it.query.length <= 500 })
     }
 
-    private fun line(text: String, y: Float, block: Int) =
-        OcrLine(text, 20f, y, 980f, y + 16f, block)
+    private fun line(text: String, y: Float, block: Int, left: Float = 20f) =
+        OcrLine(text, left, y, 980f, y + 16f, block)
 }

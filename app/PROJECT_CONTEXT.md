@@ -157,7 +157,8 @@ Observed on a real phone (reported 2026-09-21): positive Live Scan identificatio
 - Commits `b2842ba` and `d641ea6` add New project from paper details and full-screen reference selection/results. Their full JVM test runs passed before commit.
 - Launcher artwork and every density-specific bitmap were restored byte-for-byte to the committed original after the proposed redesign and prefilter were rejected.
 - Pending reference-stability working tree: reference scans always compare two OCR observations and merge complementary entries using labels plus conservative text similarity. New JVM tests cover complementary frames, unnumbered variants, OCR label drift, and distinct similar references.
-- Final verification passed on 2026-09-21: 135 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed with 0 errors and 23 warnings. The only compile warning shown was the existing CameraX `setTargetResolution` deprecation. The reference-stability slice and this context update remain uncommitted.
+- Final verification for commit `fdf6159` passed on 2026-09-21: 135 JVM tests with 0 failures/errors/skips, `assembleDebug` succeeded, and `lintDebug` completed with 0 errors and 23 warnings. The only compile warning shown was the existing CameraX `setTargetResolution` deprecation.
+- Device regression: an unnumbered bibliography page was detected as one reference because ML Kit grouped all entries into one block. Layout parsing now splits such blocks by completed year endings, paragraph gaps, and hanging-indent returns; venue recognition also covers the full names commonly printed for ML/AI proceedings and journals. Verification passes with 136 JVM tests, a successful debug build, and lint at 0 errors/23 warnings.
 
 ## Next action
 

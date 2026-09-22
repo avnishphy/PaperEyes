@@ -45,14 +45,22 @@ internal object ReferenceDetector {
             .sortedWith(compareBy<IndexedValue<OcrLine>> { it.value.top }.thenBy { it.value.left })
             .take(MAX_INPUT_LINES)
             .map { (index, line) ->
-                SourceLine(index, clean(line.text), line.blockId)
+                SourceLine(
+                    index = index,
+                    text = clean(line.text),
+                    blockId = line.blockId,
+                    left = line.left,
+                    top = line.top,
+                    bottom = line.bottom,
+                    height = line.height
+                )
             }
             .toList()
 
         val blockGroups = valid
             .groupBy { it.blockId }
             .values
-            .map { block -> block.sortedBy { it.index } }
+            .flatMap(::layoutParagraphGroups)
 
         return detect(valid, blockGroups)
     }
@@ -133,6 +141,47 @@ internal object ReferenceDetector {
         } else groups
     }
 
+    /**
+     * ML Kit often returns an entire unnumbered bibliography page as one block.
+     * Recover its visual paragraphs from vertical spacing and hanging indents.
+     */
+    private fun layoutParagraphGroups(
+        block: List<SourceLine>
+    ): List<List<SourceLine>> {
+        val ordered = block.sortedWith(compareBy<SourceLine> { it.top }.thenBy { it.left })
+        if (ordered.size <= 1) return listOf(ordered)
+
+        val medianHeight = ordered.map { it.height }.sorted()[ordered.size / 2]
+        val groups = mutableListOf<MutableList<SourceLine>>()
+
+        ordered.forEach { line ->
+            val current = groups.lastOrNull()
+            if (current == null) {
+                groups += mutableListOf(line)
+                return@forEach
+            }
+
+            val previous = current.last()
+            val first = current.first()
+            val verticalGap = line.top - previous.bottom
+            val returnsToParagraphMargin =
+                previous.left - first.left >= medianHeight * HANGING_INDENT_HEIGHT_RATIO &&
+                    line.left <= first.left + medianHeight * MARGIN_TOLERANCE_HEIGHT_RATIO
+            val completedCitation =
+                referenceEnding.containsMatchIn(joinWrapped(current.map { it.text }))
+            val visibleParagraphGap =
+                verticalGap >= medianHeight * PARAGRAPH_GAP_HEIGHT_RATIO
+
+            if (completedCitation || returnsToParagraphMargin || visibleParagraphGap) {
+                groups += mutableListOf(line)
+            } else {
+                current += line
+            }
+        }
+
+        return groups
+    }
+
     private fun parseStart(text: String): Pair<String, String>? {
         bracketedReferenceStart.matchEntire(text)?.let { match ->
             return match.groupValues[1] to match.groupValues[2]
@@ -194,7 +243,11 @@ internal object ReferenceDetector {
     private data class SourceLine(
         val index: Int,
         val text: String,
-        val blockId: Int = index
+        val blockId: Int = index,
+        val left: Float = 0f,
+        val top: Float = index.toFloat(),
+        val bottom: Float = top,
+        val height: Float = 1f
     )
 
     private data class NumberedStart(
@@ -216,6 +269,9 @@ internal object ReferenceDetector {
     private const val MAX_QUERY_CHARS = 500
     private const val MAX_INPUT_LINES = 600
     private const val MAX_INPUT_CHARS = 100_000
+    private const val HANGING_INDENT_HEIGHT_RATIO = 0.55f
+    private const val MARGIN_TOLERANCE_HEIGHT_RATIO = 0.45f
+    private const val PARAGRAPH_GAP_HEIGHT_RATIO = 0.55f
 }
 
 private val bracketedReferenceStart =
@@ -227,10 +283,11 @@ private val plainReferenceStart =
 private val whitespace = Regex("""\s+""")
 private val canonicalNoise = Regex("""[^\p{L}\p{N}]+""")
 private val publicationYear = Regex("""\b(?:18|19|20)\d{2}[a-z]?\b""", RegexOption.IGNORE_CASE)
+private val referenceEnding = Regex("""(?:18|19|20)\d{2}[a-z]?[.)]?\s*$""", RegexOption.IGNORE_CASE)
 private val authorSignal = Regex(
-    """(?i)(?:\bet\s+al\.?\b|\b[A-Z][\p{L}'-]+\s*,\s*(?:[A-Z]\.|[A-Z][\p{L}'-]+)|(?:\b[A-Z]\.){1,3}\s*[A-Z][\p{L}'-]+)"""
+    """(?i)(?:\bet\s+al\.?\b|\b[A-Z][\p{L}'-]+\s*,\s*(?:[A-Z]\.|[A-Z][\p{L}'-]+)|(?:\b[A-Z]\.){1,3}\s*[A-Z][\p{L}'-]+|\b[A-Z][\p{L}'-]+(?:\s+[A-Z](?:\.|[\p{L}'-]+)){1,3}\s+(?:and|&|,))"""
 )
 private val publicationVenue = Regex(
-    """(?i)\b(?:proceedings|conference|workshop|symposium|journal|transactions|letters|review|rev\.|phys\.|ICML|NeurIPS|NIPS|CVPR|ACL|EMNLP|AAAI|IJCAI|Springer|Elsevier|IEEE|ACM)\b"""
+    """(?i)\b(?:proceedings|conference|workshop|symposium|journal|transactions|letters|review|rev\.|phys\.|machine learning|neural information processing systems|computer vision|computational linguistics|chemical physics|arxiv|ICML|NeurIPS|NIPS|CVPR|ACL|EMNLP|AAAI|IJCAI|Springer|Elsevier|IEEE|ACM)\b"""
 )
 private val quotedTitle = Regex("""[\"“‘']([^\"”’']{8,300})[\"”’']""")
