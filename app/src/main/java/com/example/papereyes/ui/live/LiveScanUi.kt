@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.example.papereyes.data.model.Paper
+import com.example.papereyes.domain.evidence.ScanSubject
 import com.example.papereyes.domain.reference.ReferenceResolution
 import com.example.papereyes.ui.common.ReferenceBatchResults
 
@@ -60,6 +61,7 @@ import com.example.papereyes.ui.common.ReferenceBatchResults
  */
 @Composable
 fun LiveScanOverlay(
+    scanSubject: ScanSubject,
     statusMessage: String,
     highResCandidate: String,
     matchScore: Double?,
@@ -92,6 +94,7 @@ fun LiveScanOverlay(
          * ------------------------------------------------------------
          */
         LiveScanTopBar(
+            scanSubject = scanSubject,
             showDebug = showDebug,
             debugAvailable = debugAvailable,
 
@@ -127,6 +130,7 @@ fun LiveScanOverlay(
          * ------------------------------------------------------------
          */
         LiveScanStatusPill(
+            scanSubject = scanSubject,
             statusMessage =
                 statusMessage,
 
@@ -395,6 +399,7 @@ fun LiveScanPermissionScreen(
  */
 @Composable
 private fun LiveScanTopBar(
+    scanSubject: ScanSubject,
     showDebug: Boolean,
     debugAvailable: Boolean,
     onBack: () -> Unit,
@@ -405,9 +410,6 @@ private fun LiveScanTopBar(
     Row(
         modifier =
             modifier,
-
-        horizontalArrangement =
-            Arrangement.SpaceBetween,
 
         verticalAlignment =
             Alignment.CenterVertically
@@ -423,6 +425,21 @@ private fun LiveScanTopBar(
             onClick =
                 onBack
         )
+
+        Surface(
+            modifier = Modifier.padding(start = 8.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = scanSubject.displayLabel(),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
 
 
         if (debugAvailable) {
@@ -598,6 +615,7 @@ private fun BackControl(
  */
 @Composable
 private fun LiveScanStatusPill(
+    scanSubject: ScanSubject,
     statusMessage: String,
     captureInProgress: Boolean,
     resolving: Boolean,
@@ -621,12 +639,12 @@ private fun LiveScanStatusPill(
 
             resolving ->
 
-                "Identifying paper…"
+                if (scanSubject.isReferenceFocused) "Searching references…" else "Searching for paper…"
 
 
             captureInProgress ->
 
-                "Capturing…"
+                "Reading text…"
 
 
             statusMessage.contains(
@@ -635,7 +653,7 @@ private fun LiveScanStatusPill(
                     true
             ) ->
 
-                "Reading title…"
+                "Reading text…"
 
 
             statusMessage.contains(
@@ -649,7 +667,7 @@ private fun LiveScanStatusPill(
 
             else ->
 
-                "Looking for a paper"
+                "Position the ${if (scanSubject == ScanSubject.CONFERENCE_SLIDE) "slide" else "page"}"
         }
 
 
@@ -739,6 +757,13 @@ private fun LiveScanStatusPill(
     }
 }
 
+
+private fun ScanSubject.displayLabel(): String =
+    when (this) {
+        ScanSubject.JOURNAL_PAPER -> "Journal article"
+        ScanSubject.REFERENCES -> "Reference list"
+        ScanSubject.CONFERENCE_SLIDE -> "Conference slide"
+    }
 
 /*
  * ================================================================

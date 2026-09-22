@@ -1473,6 +1473,7 @@ fun LiveScanScreen(
          * LiveScanUi.kt.
          */
         LiveScanOverlay(
+            scanSubject = scanSubject,
             statusMessage =
                 statusMessage,
 
